@@ -53,6 +53,7 @@ export default function NodePalette() {
                 key={type}
                 type="button"
                 draggable
+                aria-label={`Add ${meta.label} node to canvas`}
                 onDragStart={(event) => {
                   event.dataTransfer.setData(DRAG_MIME, type);
                   event.dataTransfer.effectAllowed = 'move';

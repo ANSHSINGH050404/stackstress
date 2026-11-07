@@ -176,6 +176,7 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
         ) : (
           <button
             type="button"
+            aria-label="Inject a 5 second outage"
             onClick={() => injectOutage(id, 5000)}
             className="nodrag ml-auto rounded border border-rose-500/30 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-rose-400/80 transition-colors hover:bg-rose-500/10 hover:text-rose-300"
             title="Inject a 5 second outage"
@@ -187,6 +188,7 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
           className="ml-2 h-2 w-2 rounded-full shadow-[0_0_6px_currentColor]"
           style={{ background: status, color: status }}
           title={`Utilization ${formatPercent(utilization)}`}
+          aria-label={`Utilization ${formatPercent(utilization)}`}
         />
       </div>
 

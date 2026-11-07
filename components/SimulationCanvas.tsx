@@ -71,6 +71,7 @@ function Toolbar() {
     <div className="absolute left-4 top-4 z-10 flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-[#0a111a]/90 px-2 py-1.5 shadow-lg shadow-black/30 backdrop-blur">
       <button
         type="button"
+        aria-label={running ? 'Pause simulation' : 'Run simulation'}
         onClick={() => setRunning(!running)}
         className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
           running
@@ -100,6 +101,7 @@ function Toolbar() {
       </button>
       <button
         type="button"
+        aria-label="Reset simulation"
         onClick={() => {
           resetSimulation();
           resetMetrics();
@@ -118,6 +120,7 @@ function Toolbar() {
           <button
             key={profile.id}
             type="button"
+            aria-label={`Select ${profile.label} load profile`}
             onClick={() => {
               setLoadProfile(profile.id);
               applyLoadProfile(profile.id);
