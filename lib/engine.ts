@@ -1,6 +1,7 @@
 import {
   ComponentConfig,
   GraphPayload,
+  LoadProfile,
   NodeMetrics,
   SimulationSummary,
   SimulationUpdate,
@@ -50,6 +51,7 @@ interface NodeRuntime {
   queue: Request[];
   busy: boolean;
   epoch: number;
+  downUntil: number;
   interval: IntervalStats;
   totalIn: number;
   totalOut: number;
@@ -162,6 +164,7 @@ export class SimulationEngine {
   private seq = 0;
   private requestSeq = 0;
   private time = 0;
+  private loadProfile: LoadProfile = 'steady';
 
   private summaryInterval = {
     generated: 0,
@@ -210,6 +213,7 @@ export class SimulationEngine {
         queue: [],
         busy: false,
         epoch: 0,
+        downUntil: 0,
         interval: emptyInterval(),
         totalIn: 0,
         totalOut: 0,
@@ -226,6 +230,28 @@ export class SimulationEngine {
       const targets = this.edges.get(edge.source) ?? [];
       if (!targets.includes(edge.target)) targets.push(edge.target);
       this.edges.set(edge.source, targets);
+    }
+  }
+
+  /** Change the global traffic pattern and reschedule generators immediately. */
+  public setLoadProfile(profile: LoadProfile): void {
+    this.loadProfile = profile;
+    for (const runtime of this.components.values()) {
+      if (runtime.config.type !== 'traffic-generator') continue;
+      runtime.epoch += 1;
+      this.scheduleNextGeneration(runtime);
+    }
+  }
+
+  /** Take a component down for a fixed duration, failing everything queued. */
+  public injectOutage(nodeId: string, durationMs: number): void {
+    const runtime = this.components.get(nodeId);
+    if (!runtime) return;
+
+    runtime.downUntil = Math.max(runtime.downUntil, this.time + Math.max(100, durationMs));
+    while (runtime.queue.length > 0) {
+      runtime.queue.pop();
+      this.recordDrop(runtime);
     }
   }
 
@@ -272,6 +298,8 @@ export class SimulationEngine {
 
     this.scheduleNextGeneration(runtime, event.time);
 
+    if (this.isDown(runtime)) return;
+
     runtime.interval.in += 1;
     runtime.interval.out += 1;
     runtime.totalIn += 1;
@@ -307,6 +335,11 @@ export class SimulationEngine {
 
     runtime.interval.in += 1;
     runtime.totalIn += 1;
+
+    if (this.isDown(runtime)) {
+      this.recordDrop(runtime);
+      return;
+    }
 
     // A busy server with a full waiting room drops the request.
     if (runtime.busy && runtime.queue.length >= runtime.config.queueCapacity) {
@@ -396,14 +429,35 @@ export class SimulationEngine {
   }
 
   private scheduleNextGeneration(runtime: NodeRuntime, from = this.time): void {
-    if (runtime.config.throughputLimit <= 0) return;
+    const rps = runtime.config.throughputLimit * this.profileMultiplier();
+    if (rps <= 0) return;
     this.heap.push({
-      time: from + this.interarrivalMs(runtime.config.throughputLimit),
+      time: from + this.interarrivalMs(rps),
       seq: this.seq++,
       kind: 'generator',
       nodeId: runtime.config.id,
       epoch: runtime.epoch,
     });
+  }
+
+  private profileMultiplier(): number {
+    switch (this.loadProfile) {
+      case 'spike': {
+        // Baseline for 6s, then 3x for 3s, repeating every 12s.
+        const phase = (this.time + 6000) % 12000;
+        return phase < 3000 ? 3 : 1;
+      }
+      case 'ramp': {
+        // Ramp from 0.2x to 2x over the first 30s, then hold at 2x.
+        return Math.min(2, 0.2 + (this.time / 30000) * 1.8);
+      }
+      default:
+        return 1;
+    }
+  }
+
+  private isDown(runtime: NodeRuntime): boolean {
+    return this.time < runtime.downUntil;
   }
 
   private interarrivalMs(rps: number): number {
@@ -451,6 +505,7 @@ export class SimulationEngine {
         errors: runtime.interval.errors,
         dropped: runtime.interval.dropped,
         queueDepth: runtime.queue.length,
+        down: this.isDown(runtime),
         utilization: clamp(runtime.interval.busyMs / duration, 0, 1),
         p50Latency: percentile(samples, 0.5),
         p95Latency: percentile(samples, 0.95),

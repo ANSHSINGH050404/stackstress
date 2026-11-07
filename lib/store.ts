@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import {
   ComponentConfig,
   ComponentType,
+  LoadProfile,
   NodeMetrics,
   SimulationSummary,
   SimulationUpdate,
@@ -185,6 +186,7 @@ interface SimulationStore {
   history: HistoryPoint[];
   summary: SimulationSummary | null;
   running: boolean;
+  loadProfile: LoadProfile;
   addNode: (type: ComponentType, position: XYPosition) => void;
   updateNodeData: (id: string, patch: Partial<ComponentConfig>) => void;
   onNodesChange: OnNodesChange<SimNode>;
@@ -192,6 +194,7 @@ interface SimulationStore {
   onConnect: OnConnect;
   applyUpdate: (update: SimulationUpdate) => void;
   setRunning: (running: boolean) => void;
+  setLoadProfile: (profile: LoadProfile) => void;
   resetMetrics: () => void;
 }
 
@@ -203,6 +206,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   history: [],
   summary: null,
   running: true,
+  loadProfile: 'steady',
 
   addNode: (type, position) =>
     set((state) => ({
@@ -274,6 +278,8 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
     })),
 
   setRunning: (running) => set({ running }),
+
+  setLoadProfile: (loadProfile) => set({ loadProfile }),
 
   resetMetrics: () =>
     set((state) => ({

@@ -7,7 +7,9 @@ This is not another diagramming tool. The canvas is an executable model: every c
 ## What it does
 
 - Drag-and-drop components: traffic generator, load balancer, service, cache, and database.
-- Discrete-event simulation with per-node queues, capacity limits, failure injection, and p50/p95/p99 latency.
+- Discrete-event simulation with per-node queues, capacity limits, and p50/p95/p99 latency.
+- Load profiles: steady traffic, repeating 3x spikes, or a 0.2x-to-2x ramp.
+- One-click 5-second outages on any node to watch queues drain, errors spike, and the system recover.
 - Live utilization, queue depth, throughput, and error-rate charts.
 - Automatic bottleneck detection via utilization and queue-depth visuals.
 - Pause, resume, and reset controls.
@@ -29,7 +31,7 @@ npx tsc --noEmit
 
 ## Architecture
 
-- `lib/engine.ts` — discrete-event engine: binary event heap, per-node queues, load-aware routing, latency percentiles, and interval metrics.
+- `lib/engine.ts` — discrete-event engine: binary event heap, per-node queues, load-aware routing, load profiles, outage injection, latency percentiles, and interval metrics.
 - `lib/store.ts` — Zustand store for the graph, node metrics, and chart history.
 - `lib/simulationClient.ts` — simulation runner and graph synchronization boundary.
 - `components/SimulationCanvas.tsx` — React Flow canvas, toolbar, drag-and-drop, and runner wiring.

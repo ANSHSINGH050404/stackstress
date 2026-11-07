@@ -2,10 +2,12 @@
 
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { COMPONENT_META, SimNode, useSimulationStore } from '@/lib/store';
+import { injectOutage } from '@/lib/simulationClient';
 import { formatLatency, formatPercent, formatRate } from '@/lib/format';
 import { ComponentConfig } from '@/types';
 
-function statusColor(utilization: number, errors: number): string {
+function statusColor(utilization: number, errors: number, down = false): string {
+  if (down) return '#fb7185';
   if (errors > 0) return '#fb7185';
   if (utilization > 0.9) return '#fb7185';
   if (utilization > 0.7) return '#fbbf24';
@@ -79,7 +81,7 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
   const isGenerator = component.type === 'traffic-generator';
 
   const utilization = metrics?.utilization ?? 0;
-  const status = statusColor(utilization, metrics?.errors ?? 0);
+  const status = statusColor(utilization, metrics?.errors ?? 0, metrics?.down);
 
   const set = (patch: Partial<ComponentConfig>) => updateNodeData(id, patch);
 
@@ -98,8 +100,22 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
         <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-200">
           {component.name}
         </span>
+        {metrics?.down ? (
+          <span className="ml-auto animate-pulse rounded bg-rose-500/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-rose-400">
+            Down
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => injectOutage(id, 5000)}
+            className="nodrag ml-auto rounded border border-rose-500/30 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-rose-400/80 transition-colors hover:bg-rose-500/10 hover:text-rose-300"
+            title="Inject a 5 second outage"
+          >
+            Kill 5s
+          </button>
+        )}
         <span
-          className="ml-auto h-2 w-2 rounded-full shadow-[0_0_6px_currentColor]"
+          className="ml-2 h-2 w-2 rounded-full shadow-[0_0_6px_currentColor]"
           style={{ background: status, color: status }}
           title={`Utilization ${formatPercent(utilization)}`}
         />

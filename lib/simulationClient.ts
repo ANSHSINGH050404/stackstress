@@ -1,6 +1,6 @@
 'use client';
 
-import { GraphPayload } from '../types';
+import { GraphPayload, LoadProfile } from '../types';
 import { SimulationEngine } from './engine';
 import { useSimulationStore } from './store';
 
@@ -33,8 +33,14 @@ function syncGraph(force = false): void {
   if (engine) {
     engine.updateGraph(graph);
   } else {
-    engine = new SimulationEngine(graph);
+    engine = createEngine(graph);
   }
+}
+
+function createEngine(graph: GraphPayload): SimulationEngine {
+  const next = new SimulationEngine(graph);
+  next.setLoadProfile(useSimulationStore.getState().loadProfile);
+  return next;
 }
 
 export function startSimulation(): void {
@@ -67,5 +73,13 @@ export function stopSimulation(): void {
 }
 
 export function resetSimulation(): void {
-  engine = new SimulationEngine(currentGraph());
+  engine = createEngine(currentGraph());
+}
+
+export function applyLoadProfile(profile: LoadProfile): void {
+  engine?.setLoadProfile(profile);
+}
+
+export function injectOutage(nodeId: string, durationMs: number): void {
+  engine?.injectOutage(nodeId, durationMs);
 }

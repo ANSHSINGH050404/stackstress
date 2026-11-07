@@ -5,6 +5,8 @@ export type ComponentType =
   | 'service'
   | 'traffic-generator';
 
+export type LoadProfile = 'steady' | 'spike' | 'ramp';
+
 export interface ComponentConfig {
   id: string;
   type: ComponentType;
@@ -33,6 +35,8 @@ export interface NodeMetrics {
   dropped: number;
   /** Requests currently waiting in the queue. */
   queueDepth: number;
+  /** True while the component is in an injected outage. */
+  down: boolean;
   /** Fraction of the last interval the server was busy, 0 to 1. */
   utilization: number;
   p50Latency: number;

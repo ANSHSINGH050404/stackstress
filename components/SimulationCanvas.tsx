@@ -19,9 +19,14 @@ import LoadBalancerNode from './nodes/LoadBalancerNode';
 import ServiceNode from './nodes/ServiceNode';
 import TrafficGeneratorNode from './nodes/TrafficGeneratorNode';
 import { formatDuration } from '@/lib/format';
-import { resetSimulation, startSimulation, stopSimulation } from '@/lib/simulationClient';
+import {
+  applyLoadProfile,
+  resetSimulation,
+  startSimulation,
+  stopSimulation,
+} from '@/lib/simulationClient';
 import { COMPONENT_DEFAULTS, useSimulationStore } from '@/lib/store';
-import { ComponentType } from '@/types';
+import { ComponentType, LoadProfile } from '@/types';
 
 const nodeTypes = {
   'traffic-generator': TrafficGeneratorNode,
@@ -31,10 +36,18 @@ const nodeTypes = {
   database: DatabaseNode,
 } satisfies NodeTypes;
 
+const LOAD_PROFILES: Array<{ id: LoadProfile; label: string }> = [
+  { id: 'steady', label: 'Steady' },
+  { id: 'spike', label: 'Spike' },
+  { id: 'ramp', label: 'Ramp' },
+];
+
 function Toolbar() {
   const running = useSimulationStore((state) => state.running);
   const setRunning = useSimulationStore((state) => state.setRunning);
   const resetMetrics = useSimulationStore((state) => state.resetMetrics);
+  const loadProfile = useSimulationStore((state) => state.loadProfile);
+  const setLoadProfile = useSimulationStore((state) => state.setLoadProfile);
   const elapsed = useSimulationStore((state) => {
     const latest = state.history[state.history.length - 1];
     return latest?.t ?? 0;
@@ -84,6 +97,29 @@ function Toolbar() {
       <span className="px-1 text-[10px] tabular-nums text-slate-500">
         t {formatDuration(elapsed)}
       </span>
+      <span className="ml-1 h-4 w-px bg-slate-800" />
+      <span className="pl-1 text-[9px] font-medium uppercase tracking-wider text-slate-500">
+        Load
+      </span>
+      <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/60 p-0.5">
+        {LOAD_PROFILES.map((profile) => (
+          <button
+            key={profile.id}
+            type="button"
+            onClick={() => {
+              setLoadProfile(profile.id);
+              applyLoadProfile(profile.id);
+            }}
+            className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
+              loadProfile === profile.id
+                ? 'bg-slate-700/80 text-slate-100'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            {profile.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
