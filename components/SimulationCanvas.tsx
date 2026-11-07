@@ -68,7 +68,18 @@ export default function SimulationCanvas() {
 
     worker.onmessage = (e) => {
       if (e.data.type === 'UPDATE') {
-        console.log('Simulation update:', e.data.state);
+        const newState = e.data.state;
+        setNodes((nds) => 
+          nds.map(node => {
+            if (newState.components[node.id]) {
+              return {
+                ...node,
+                data: { ...node.data, metrics: newState.components[node.id].throughputLimit }
+              };
+            }
+            return node;
+          })
+        );
       }
     };
 

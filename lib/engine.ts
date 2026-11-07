@@ -30,7 +30,7 @@ export class SimulationEngine {
     if (!targetComponent) return;
 
     // Simulate component processing: add latency
-    const processingTime = targetComponent.latency;
+    targetComponent.throughputLimit++; // Simple metric: increment requests
     
     // Schedule response event
     this.scheduleEvent({
