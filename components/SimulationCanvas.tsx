@@ -45,21 +45,38 @@ export default function SimulationCanvas() {
   }, []);
 
   useEffect(() => {
-    setNodes([
-      { 
-        id: '1', 
-        type: 'trafficGenerator', 
-        data: { rps: 500, updateNodeData }, 
-        position: { x: 250, y: 5 } 
-      },
-      { 
-        id: '2', 
-        type: 'database', 
-        data: { latency: 50, updateNodeData }, 
-        position: { x: 250, y: 150 } 
-      },
-    ]);
-  }, [updateNodeData]);
+    // Initialize Web Worker
+    const worker = new Worker(new URL('./simulation.worker.ts', import.meta.url));
+
+    // Send initial state to worker
+    worker.postMessage({
+      type: 'INIT',
+      payload: {
+        components: {
+          '1': { id: '1', type: 'traffic-generator', name: 'Gen', throughputLimit: 100, latency: 0, failureRate: 0, queueCapacity: 100 },
+          '2': { id: '2', type: 'database', name: 'DB', throughputLimit: 100, latency: 50, failureRate: 0, queueCapacity: 100 },
+        },
+        events: [],
+        currentTime: 0,
+      }
+    });
+
+    // Start simulation loop
+    const interval = setInterval(() => {
+      worker.postMessage({ type: 'TICK', payload: { duration: 1000 } });
+    }, 1000);
+
+    worker.onmessage = (e) => {
+      if (e.data.type === 'UPDATE') {
+        console.log('Simulation update:', e.data.state);
+      }
+    };
+
+    return () => {
+      worker.terminate();
+      clearInterval(interval);
+    };
+  }, []);
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
