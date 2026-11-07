@@ -26,11 +26,21 @@ export class SimulationEngine {
   }
 
   private processEvent(event: SystemEvent) {
-    console.log(`Processing ${event.type} at ${event.time}`);
-    // Core logic: 
-    // 1. Identify target component
-    // 2. Calculate latency/bottleneck
-    // 3. Schedule next event (response/error)
+    const targetComponent = this.state.components[event.targetId];
+    if (!targetComponent) return;
+
+    // Simulate component processing: add latency
+    const processingTime = targetComponent.latency;
+    
+    // Schedule response event
+    this.scheduleEvent({
+      id: `resp-${event.payload.requestId}`,
+      time: event.time + processingTime,
+      type: 'response',
+      sourceId: event.targetId,
+      targetId: event.sourceId, // Return to sender
+      payload: event.payload
+    });
   }
 
   public getState(): SystemState {
