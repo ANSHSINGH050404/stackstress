@@ -15,7 +15,7 @@ import {
   OnConnect,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import TrafficGeneratorNode from './nodes/TrafficGeneratorNode';
 import DatabaseNode from './nodes/DatabaseNode';
 
@@ -24,26 +24,42 @@ const nodeTypes = {
   database: DatabaseNode,
 };
 
-const initialNodes: Node[] = [
-  { 
-    id: '1', 
-    type: 'trafficGenerator', 
-    data: { rps: 500 }, 
-    position: { x: 250, y: 5 } 
-  },
-  { 
-    id: '2', 
-    type: 'database', 
-    data: { latency: 50 }, 
-    position: { x: 250, y: 150 } 
-  },
-];
-
 const initialEdges: Edge[] = [{ id: 'e1-2', source: '1', target: '2' }];
 
 export default function SimulationCanvas() {
-  const [nodes, setNodes] = useState<Node[]>(initialNodes);
+  const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
+
+  const updateNodeData = useCallback((id: string, newData: any) => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === id) {
+          return {
+            ...node,
+            data: { ...node.data, ...newData },
+          };
+        }
+        return node;
+      })
+    );
+  }, []);
+
+  useEffect(() => {
+    setNodes([
+      { 
+        id: '1', 
+        type: 'trafficGenerator', 
+        data: { rps: 500, updateNodeData }, 
+        position: { x: 250, y: 5 } 
+      },
+      { 
+        id: '2', 
+        type: 'database', 
+        data: { latency: 50, updateNodeData }, 
+        position: { x: 250, y: 150 } 
+      },
+    ]);
+  }, [updateNodeData]);
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
