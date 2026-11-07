@@ -76,6 +76,16 @@ export default function MetricsPanel() {
   const latest = history[history.length - 1];
   const elapsed = latest?.t ?? 0;
 
+  // Build all three series in one pass instead of mapping history three times.
+  const throughput: number[] = [];
+  const p95: number[] = [];
+  const errorRate: number[] = [];
+  for (const point of history) {
+    throughput.push(point.rps);
+    p95.push(point.p95);
+    errorRate.push(point.errorRate);
+  }
+
   return (
     <div className="pointer-events-auto absolute bottom-4 left-4 right-4 z-10 flex gap-2 overflow-x-auto rounded-xl border border-slate-800/80 bg-[#0a111a]/90 p-2 shadow-2xl shadow-black/40 backdrop-blur">
       <div className="flex w-52 shrink-0 flex-col justify-between rounded-lg border border-slate-800/80 bg-slate-900/40 px-3 py-2">
@@ -130,19 +140,19 @@ export default function MetricsPanel() {
         label="Throughput"
         value={`${formatRate(latest?.rps ?? 0)}/s`}
         color="#38bdf8"
-        values={history.map((point) => point.rps)}
+        values={throughput}
       />
       <ChartCard
         label="p95 latency"
         value={formatLatency(latest?.p95 ?? 0)}
         color="#fbbf24"
-        values={history.map((point) => point.p95)}
+        values={p95}
       />
       <ChartCard
         label="Error rate"
         value={formatPercent(latest?.errorRate ?? 0)}
         color="#fb7185"
-        values={history.map((point) => point.errorRate)}
+        values={errorRate}
       />
     </div>
   );

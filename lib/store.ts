@@ -24,7 +24,6 @@ import {
 
 export type SimNodeData = {
   component: ComponentConfig;
-  metrics?: NodeMetrics;
 };
 
 export type SimNode = Node<SimNodeData>;
@@ -185,6 +184,7 @@ interface SimulationStore {
   edges: Edge[];
   history: HistoryPoint[];
   summary: SimulationSummary | null;
+  metricsById: Record<string, NodeMetrics>;
   running: boolean;
   loadProfile: LoadProfile;
   addNode: (type: ComponentType, position: XYPosition) => void;
@@ -205,6 +205,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   edges: initialEdges,
   history: [],
   summary: null,
+  metricsById: {},
   running: true,
   loadProfile: 'steady',
 
@@ -233,6 +234,12 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       const removed = new Set(
         changes.filter((change) => change.type === 'remove').map((change) => change.id)
       );
+      const metricsById =
+        removed.size > 0
+          ? Object.fromEntries(
+              Object.entries(state.metricsById).filter(([id]) => !removed.has(id))
+            )
+          : state.metricsById;
       return {
         nodes: applyNodeChanges(changes, state.nodes),
         edges:
@@ -241,6 +248,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
                 (edge) => !removed.has(edge.source) && !removed.has(edge.target)
               )
             : state.edges,
+        metricsById,
       };
     }),
 
@@ -256,14 +264,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
 
   applyUpdate: (update) =>
     set((state) => ({
-      nodes: state.nodes.map((node) => {
-        const metrics = update.nodes[node.id];
-        if (!metrics) return node;
-        return {
-          ...node,
-          data: { ...node.data, metrics },
-        };
-      }),
+      metricsById: update.nodes,
       summary: update.summary,
       history: [
         ...state.history.slice(-(HISTORY_LIMIT - 1)),
@@ -282,12 +283,9 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   setLoadProfile: (loadProfile) => set({ loadProfile }),
 
   resetMetrics: () =>
-    set((state) => ({
-      nodes: state.nodes.map((node) => ({
-        ...node,
-        data: { ...node.data, metrics: undefined },
-      })),
+    set({
+      metricsById: {},
       history: [],
       summary: null,
-    })),
+    }),
 }));

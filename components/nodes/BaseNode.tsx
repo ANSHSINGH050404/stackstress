@@ -1,6 +1,7 @@
 'use client';
 
 import { Handle, NodeProps, Position } from '@xyflow/react';
+import { memo, useCallback } from 'react';
 import { COMPONENT_META, SimNode, useSimulationStore } from '@/lib/store';
 import { injectOutage } from '@/lib/simulationClient';
 import { formatLatency, formatPercent, formatRate } from '@/lib/format';
@@ -72,18 +73,86 @@ function Metric({
   );
 }
 
+/**
+ * Memoized so live metrics ticks re-render the readout without touching the
+ * controlled inputs. `component` only changes when the user edits the config.
+ */
+const NodeConfigForm = memo(function NodeConfigForm({
+  component,
+  isGenerator,
+  onChange,
+}: {
+  component: ComponentConfig;
+  isGenerator: boolean;
+  onChange: (patch: Partial<ComponentConfig>) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2 px-3 pt-2.5">
+      {isGenerator ? (
+        <div className="col-span-2">
+          <NumberField
+            label="Target rate"
+            value={component.throughputLimit}
+            suffix="rps"
+            step={10}
+            max={100_000}
+            onChange={(value) => onChange({ throughputLimit: value })}
+          />
+        </div>
+      ) : (
+        <>
+          <NumberField
+            label="Capacity"
+            value={component.throughputLimit}
+            suffix="rps"
+            step={10}
+            max={100_000}
+            onChange={(value) => onChange({ throughputLimit: value })}
+          />
+          <NumberField
+            label="Latency"
+            value={component.latency}
+            suffix="ms"
+            step={1}
+            max={60_000}
+            onChange={(value) => onChange({ latency: value })}
+          />
+          <NumberField
+            label="Failures"
+            value={Math.round(component.failureRate * 100)}
+            suffix="%"
+            max={100}
+            onChange={(value) => onChange({ failureRate: value / 100 })}
+          />
+          <NumberField
+            label="Queue"
+            value={component.queueCapacity}
+            suffix="req"
+            step={10}
+            max={1_000_000}
+            onChange={(value) => onChange({ queueCapacity: Math.round(value) })}
+          />
+        </>
+      )}
+    </div>
+  );
+});
+
 export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
   const updateNodeData = useSimulationStore((state) => state.updateNodeData);
+  const metrics = useSimulationStore((state) => state.metricsById[id]);
 
   const component: ComponentConfig = data.component;
-  const metrics = data.metrics;
   const meta = COMPONENT_META[component.type];
   const isGenerator = component.type === 'traffic-generator';
 
   const utilization = metrics?.utilization ?? 0;
   const status = statusColor(utilization, metrics?.errors ?? 0, metrics?.down);
 
-  const set = (patch: Partial<ComponentConfig>) => updateNodeData(id, patch);
+  const set = useCallback(
+    (patch: Partial<ComponentConfig>) => updateNodeData(id, patch),
+    [id, updateNodeData]
+  );
 
   return (
     <div
@@ -121,54 +190,7 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-2 px-3 pt-2.5">
-        {isGenerator ? (
-          <div className="col-span-2">
-            <NumberField
-              label="Target rate"
-              value={component.throughputLimit}
-              suffix="rps"
-              step={10}
-              max={100_000}
-              onChange={(value) => set({ throughputLimit: value })}
-            />
-          </div>
-        ) : (
-          <>
-            <NumberField
-              label="Capacity"
-              value={component.throughputLimit}
-              suffix="rps"
-              step={10}
-              max={100_000}
-              onChange={(value) => set({ throughputLimit: value })}
-            />
-            <NumberField
-              label="Latency"
-              value={component.latency}
-              suffix="ms"
-              step={1}
-              max={60_000}
-              onChange={(value) => set({ latency: value })}
-            />
-            <NumberField
-              label="Failures"
-              value={Math.round(component.failureRate * 100)}
-              suffix="%"
-              max={100}
-              onChange={(value) => set({ failureRate: value / 100 })}
-            />
-            <NumberField
-              label="Queue"
-              value={component.queueCapacity}
-              suffix="req"
-              step={10}
-              max={1_000_000}
-              onChange={(value) => set({ queueCapacity: Math.round(value) })}
-            />
-          </>
-        )}
-      </div>
+      <NodeConfigForm component={component} isGenerator={isGenerator} onChange={set} />
 
       <div className="mt-2.5 grid grid-cols-2 gap-1 px-3">
         <Metric label="in" value={`${formatRate(metrics?.requestsIn ?? 0)}/s`} />

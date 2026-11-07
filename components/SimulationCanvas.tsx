@@ -42,16 +42,30 @@ const LOAD_PROFILES: Array<{ id: LoadProfile; label: string }> = [
   { id: 'ramp', label: 'Ramp' },
 ];
 
+const FIT_VIEW_OPTIONS = { padding: 0.22 };
+const DELETE_KEY_CODE = ['Backspace', 'Delete'];
+const DEFAULT_EDGE_OPTIONS = { type: 'smoothstep' as const };
+const MINIMAP_STYLE = { marginBottom: 150 };
+
+function ElapsedTime() {
+  const elapsed = useSimulationStore((state) => {
+    const latest = state.history[state.history.length - 1];
+    return latest?.t ?? 0;
+  });
+
+  return (
+    <span className="px-1 text-[10px] tabular-nums text-slate-500">
+      t {formatDuration(elapsed)}
+    </span>
+  );
+}
+
 function Toolbar() {
   const running = useSimulationStore((state) => state.running);
   const setRunning = useSimulationStore((state) => state.setRunning);
   const resetMetrics = useSimulationStore((state) => state.resetMetrics);
   const loadProfile = useSimulationStore((state) => state.loadProfile);
   const setLoadProfile = useSimulationStore((state) => state.setLoadProfile);
-  const elapsed = useSimulationStore((state) => {
-    const latest = state.history[state.history.length - 1];
-    return latest?.t ?? 0;
-  });
 
   return (
     <div className="absolute left-4 top-4 z-10 flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-[#0a111a]/90 px-2 py-1.5 shadow-lg shadow-black/30 backdrop-blur">
@@ -94,9 +108,7 @@ function Toolbar() {
       >
         Reset
       </button>
-      <span className="px-1 text-[10px] tabular-nums text-slate-500">
-        t {formatDuration(elapsed)}
-      </span>
+      <ElapsedTime />
       <span className="ml-1 h-4 w-px bg-slate-800" />
       <span className="pl-1 text-[9px] font-medium uppercase tracking-wider text-slate-500">
         Load
@@ -169,10 +181,10 @@ function Simulator() {
           onConnect={onConnect}
           colorMode="dark"
           fitView
-          fitViewOptions={{ padding: 0.22 }}
+          fitViewOptions={FIT_VIEW_OPTIONS}
           minZoom={0.25}
-          deleteKeyCode={['Backspace', 'Delete']}
-          defaultEdgeOptions={{ type: 'smoothstep' }}
+          deleteKeyCode={DELETE_KEY_CODE}
+          defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         >
           <Background gap={22} size={1} color="#16202c" />
           <Controls position="top-right" />
@@ -180,7 +192,7 @@ function Simulator() {
             position="bottom-right"
             pannable
             zoomable
-            style={{ marginBottom: 150 }}
+            style={MINIMAP_STYLE}
             nodeColor="#334155"
             maskColor="rgba(8, 13, 19, 0.75)"
           />
