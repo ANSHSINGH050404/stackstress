@@ -17,3 +17,82 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+.sim-sidebar-enter {
+  animation: sim-slide-in 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.sim-toolbar-enter {
+  animation: sim-rise-in 360ms 60ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.sim-panel-enter {
+  animation: sim-rise-in 420ms 120ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.sim-node-enter {
+  animation: sim-node-in 360ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.sim-progress-fill {
+  transform-origin: left center;
+  transition: transform 350ms ease-out;
+}
+
+@keyframes sim-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes sim-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sim-node-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sim-sidebar-enter,
+  .sim-toolbar-enter,
+  .sim-panel-enter,
+  .sim-node-enter,
+  .animate-pulse {
+    animation: none;
+  }
+
+  .sim-progress-fill {
+    transition: none;
+  }
+
+  .react-flow__edge.animated path {
+    animation: none !important;
+  }
+
+  .sim-utilization-fill {
+    transition: none;
+  }
+}

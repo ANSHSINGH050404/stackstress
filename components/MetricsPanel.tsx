@@ -87,7 +87,7 @@ export default function MetricsPanel() {
   }
 
   return (
-    <div className="pointer-events-auto absolute bottom-4 left-4 right-4 z-10 flex gap-2 overflow-x-auto rounded-xl border border-slate-800/80 bg-[#0a111a]/90 p-2 shadow-2xl shadow-black/40 backdrop-blur">
+    <div className="sim-panel-enter pointer-events-auto absolute bottom-4 left-4 right-4 z-10 flex gap-2 overflow-x-auto rounded-xl border border-slate-800/80 bg-[#0a111a]/90 p-2 shadow-2xl shadow-black/40 backdrop-blur">
       <div className="flex w-52 shrink-0 flex-col justify-between rounded-lg border border-slate-800/80 bg-slate-900/40 px-3 py-2">
         <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
           <span

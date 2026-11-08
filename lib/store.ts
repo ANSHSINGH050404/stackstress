@@ -31,6 +31,7 @@ export type SimNode = Node<SimNodeData>;
 export interface HistoryPoint {
   t: number;
   rps: number;
+  generatedRps: number;
   p95: number;
   errorRate: number;
   avgLatency: number;
@@ -187,6 +188,7 @@ interface SimulationStore {
   metricsById: Record<string, NodeMetrics>;
   running: boolean;
   loadProfile: LoadProfile;
+  sharedScenarioLoaded: boolean;
   addNode: (type: ComponentType, position: XYPosition) => void;
   updateNodeData: (id: string, patch: Partial<ComponentConfig>) => void;
   onNodesChange: OnNodesChange<SimNode>;
@@ -195,6 +197,7 @@ interface SimulationStore {
   applyUpdate: (update: SimulationUpdate) => void;
   setRunning: (running: boolean) => void;
   setLoadProfile: (profile: LoadProfile) => void;
+  replaceScenario: (nodes: SimNode[], edges: Edge[], loadProfile: LoadProfile) => void;
   resetMetrics: () => void;
 }
 
@@ -206,8 +209,9 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   history: [],
   summary: null,
   metricsById: {},
-  running: true,
+  running: false,
   loadProfile: 'steady',
+  sharedScenarioLoaded: false,
 
   addNode: (type, position) =>
     set((state) => ({
@@ -271,6 +275,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
         {
           t: update.time,
           rps: update.summary.completedRps,
+          generatedRps: update.summary.generatedRps,
           p95: update.summary.p95Latency,
           errorRate: update.summary.errorRate,
           avgLatency: update.summary.avgLatency,
@@ -281,6 +286,25 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   setRunning: (running) => set({ running }),
 
   setLoadProfile: (loadProfile) => set({ loadProfile }),
+
+  replaceScenario: (nodes, edges, loadProfile) =>
+    set(() => {
+      for (const node of nodes) {
+        const suffix = /-(\d+)$/.exec(node.id)?.[1];
+        if (suffix) nodeSequence = Math.max(nodeSequence, Number(suffix));
+      }
+
+      return {
+        nodes,
+        edges: edges.map((edge) => ({ ...edge, ...EDGE_STYLE })),
+        loadProfile,
+        sharedScenarioLoaded: true,
+        running: false,
+        history: [],
+        summary: null,
+        metricsById: {},
+      };
+    }),
 
   resetMetrics: () =>
     set({

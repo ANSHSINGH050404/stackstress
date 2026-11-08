@@ -2,7 +2,8 @@
 
 import { useReactFlow } from '@xyflow/react';
 import { COMPONENT_META, useSimulationStore } from '@/lib/store';
-import { ComponentType } from '@/types';
+import type { ComponentType } from '@/types';
+import ChallengePanel, { type ChallengePanelProps } from './ChallengePanel';
 
 const TYPES: ComponentType[] = [
   'traffic-generator',
@@ -14,7 +15,7 @@ const TYPES: ComponentType[] = [
 
 const DRAG_MIME = 'application/x-sim-node';
 
-export default function NodePalette() {
+export default function NodePalette({ challenge }: { challenge: ChallengePanelProps }) {
   const addNode = useSimulationStore((state) => state.addNode);
   const nodeCount = useSimulationStore((state) => state.nodes.length);
   const { screenToFlowPosition } = useReactFlow();
@@ -31,7 +32,7 @@ export default function NodePalette() {
   };
 
   return (
-    <aside className="z-20 flex w-60 shrink-0 flex-col border-r border-slate-800/80 bg-[#0a111a]">
+    <aside className="sim-sidebar-enter z-20 flex max-h-[42dvh] w-full shrink-0 flex-col border-b border-slate-800/80 bg-[#0a111a] md:h-full md:max-h-none md:w-60 md:border-b-0 md:border-r">
       <div className="border-b border-slate-800/80 px-4 py-4">
         <h1 className="text-sm font-semibold tracking-tight text-slate-100">
           System Simulator
@@ -42,6 +43,8 @@ export default function NodePalette() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
+        <ChallengePanel {...challenge} />
+
         <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
           Components
         </p>
@@ -82,7 +85,7 @@ export default function NodePalette() {
           How it works
         </p>
         <ol className="mt-2 space-y-1.5 px-1 text-[10px] leading-relaxed text-slate-500">
-          <li>1. Drag components onto the canvas.</li>
+          <li>1. Drag or tap components onto the canvas.</li>
           <li>2. Connect outputs to inputs.</li>
           <li>3. Watch queues, p95 latency, and errors react.</li>
         </ol>
@@ -95,7 +98,7 @@ export default function NodePalette() {
         </div>
       </div>
 
-      <div className="border-t border-slate-800/80 px-4 py-2.5 text-[10px] text-slate-600">
+      <div className="hidden border-t border-slate-800/80 px-4 py-2.5 text-[10px] text-slate-600 md:block">
         {nodeCount} {nodeCount === 1 ? 'component' : 'components'} on canvas
       </div>
     </aside>

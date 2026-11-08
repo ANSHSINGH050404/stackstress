@@ -10,7 +10,7 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import MetricsPanel from './MetricsPanel';
 import NodePalette, { DRAG_MIME } from './NodePalette';
 import CacheNode from './nodes/CacheNode';
@@ -25,8 +25,17 @@ import {
   startSimulation,
   stopSimulation,
 } from '@/lib/simulationClient';
+import {
+  evaluateSpikeChallenge,
+  scaleComponentCapacity,
+  SPIKE_CHALLENGE_DURATION_MS,
+  type ChallengePhase,
+  type ChallengeResult,
+} from '@/lib/challenges';
+import { createChallengeUrl, createXIntentUrl, downloadChallengeCard } from '@/lib/sharing';
+import { decodeSharedSimulation } from '@/lib/shared-simulation';
 import { COMPONENT_DEFAULTS, useSimulationStore } from '@/lib/store';
-import { ComponentType, LoadProfile } from '@/types';
+import type { ComponentType, LoadProfile } from '@/types';
 
 const nodeTypes = {
   'traffic-generator': TrafficGeneratorNode,
@@ -60,7 +69,7 @@ function ElapsedTime() {
   );
 }
 
-function Toolbar() {
+function Toolbar({ challengeRunning }: { challengeRunning: boolean }) {
   const running = useSimulationStore((state) => state.running);
   const setRunning = useSimulationStore((state) => state.setRunning);
   const resetMetrics = useSimulationStore((state) => state.resetMetrics);
@@ -68,7 +77,7 @@ function Toolbar() {
   const setLoadProfile = useSimulationStore((state) => state.setLoadProfile);
 
   return (
-    <div className="absolute left-4 top-4 z-10 flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-[#0a111a]/90 px-2 py-1.5 shadow-lg shadow-black/30 backdrop-blur">
+    <div className="sim-toolbar-enter absolute left-4 top-4 z-10 flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-[#0a111a]/90 px-2 py-1.5 shadow-lg shadow-black/30 backdrop-blur">
       <button
         type="button"
         aria-label={running ? 'Pause simulation' : 'Run simulation'}
@@ -125,11 +134,12 @@ function Toolbar() {
               setLoadProfile(profile.id);
               applyLoadProfile(profile.id);
             }}
+            disabled={challengeRunning}
             className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
               loadProfile === profile.id
                 ? 'bg-slate-700/80 text-slate-100'
                 : 'text-slate-500 hover:text-slate-300'
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-40`}
           >
             {profile.label}
           </button>
@@ -142,16 +152,170 @@ function Toolbar() {
 function Simulator() {
   const nodes = useSimulationStore((state) => state.nodes);
   const edges = useSimulationStore((state) => state.edges);
+  const history = useSimulationStore((state) => state.history);
+  const metricsById = useSimulationStore((state) => state.metricsById);
+  const running = useSimulationStore((state) => state.running);
+  const isSharedScenario = useSimulationStore((state) => state.sharedScenarioLoaded);
   const onNodesChange = useSimulationStore((state) => state.onNodesChange);
   const onEdgesChange = useSimulationStore((state) => state.onEdgesChange);
   const onConnect = useSimulationStore((state) => state.onConnect);
   const addNode = useSimulationStore((state) => state.addNode);
-  const { screenToFlowPosition } = useReactFlow();
+  const setRunning = useSimulationStore((state) => state.setRunning);
+  const setLoadProfile = useSimulationStore((state) => state.setLoadProfile);
+  const replaceScenario = useSimulationStore((state) => state.replaceScenario);
+  const updateNodeData = useSimulationStore((state) => state.updateNodeData);
+  const { fitView, screenToFlowPosition } = useReactFlow();
+  const [challengePhase, setChallengePhase] = useState<ChallengePhase>('ready');
+  const [challengeResult, setChallengeResult] = useState<ChallengeResult | null>(null);
+  const [baselineResult, setBaselineResult] = useState<ChallengeResult | null>(null);
+  const [challengeAttempt, setChallengeAttempt] = useState(0);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [resultShareUrl, setResultShareUrl] = useState<string | null>(null);
+  const latestHistory = history[history.length - 1];
+  const elapsedMs = latestHistory?.t ?? 0;
+  const visibleEdges = useMemo(
+    () =>
+      edges.map((edge) => {
+        const targetMetrics = metricsById[edge.target];
+        const active = running && (targetMetrics?.requestsIn ?? 0) > 0;
+        const color =
+          targetMetrics?.down ||
+          (targetMetrics?.dropped ?? 0) > 0 ||
+          (targetMetrics?.utilization ?? 0) > 0.9
+            ? '#fb7185'
+            : (targetMetrics?.utilization ?? 0) > 0.7
+              ? '#fbbf24'
+              : active
+                ? '#38bdf8'
+                : '#334155';
+        return {
+          ...edge,
+          animated: active,
+          style: {
+            ...edge.style,
+            stroke: color,
+            strokeWidth: active ? 2 : 1.5,
+          },
+        };
+      }),
+    [edges, metricsById, running]
+  );
 
   useEffect(() => {
+    let fitFrame: number | undefined;
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('state');
+    if (token) {
+      const shared = decodeSharedSimulation(token);
+      if (shared) {
+        replaceScenario(shared.nodes, shared.edges, shared.loadProfile);
+        resetSimulation();
+        fitFrame = window.requestAnimationFrame(() => {
+          void fitView(FIT_VIEW_OPTIONS);
+        });
+      }
+    }
     startSimulation();
-    return () => stopSimulation();
-  }, []);
+    return () => {
+      if (fitFrame !== undefined) window.cancelAnimationFrame(fitFrame);
+      stopSimulation();
+    };
+  }, [fitView, replaceScenario]);
+
+  useEffect(() => {
+    if (challengePhase !== 'running') return;
+
+    let completed = false;
+    return useSimulationStore.subscribe((state) => {
+      const latest = state.history[state.history.length - 1];
+      if (
+        completed ||
+        !state.running ||
+        !latest ||
+        latest.t < SPIKE_CHALLENGE_DURATION_MS
+      ) {
+        return;
+      }
+
+      completed = true;
+      const result = evaluateSpikeChallenge(
+        state.history,
+        state.metricsById,
+        state.nodes,
+        state.summary
+      );
+      setChallengeResult(result);
+      setBaselineResult((baseline) => baseline ?? result);
+      setChallengeAttempt((attempt) => attempt + 1);
+      setResultShareUrl(createChallengeUrl(state.nodes, state.edges));
+      setChallengePhase('complete');
+      state.setRunning(false);
+      state.setLoadProfile('steady');
+      applyLoadProfile('steady');
+    });
+  }, [challengePhase]);
+
+  const startChallenge = () => {
+    setShareNotice(null);
+    setChallengeResult(null);
+    setResultShareUrl(null);
+    setChallengePhase('running');
+    useSimulationStore.getState().resetMetrics();
+    setLoadProfile('spike');
+    resetSimulation();
+    applyLoadProfile('spike');
+    setRunning(true);
+  };
+
+  const scaleBottleneck = () => {
+    if (!challengeResult?.bottleneckId) return;
+    const bottleneck = nodes.find((node) => node.id === challengeResult.bottleneckId);
+    if (!bottleneck) return;
+
+    updateNodeData(bottleneck.id, {
+      throughputLimit: scaleComponentCapacity(bottleneck.data.component),
+    });
+    setShareNotice(`${bottleneck.data.component.name} capacity increased. Run the challenge again.`);
+  };
+
+  const copyChallengeLink = async () => {
+    const url = createChallengeUrl(nodes, edges);
+    if (!url) {
+      setShareNotice('This architecture is too large to share as a link.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareNotice('Challenge link copied.');
+    } catch {
+      setShareNotice('Clipboard access is unavailable in this browser.');
+    }
+  };
+
+  const xShareHref =
+    challengeResult && resultShareUrl
+      ? createXIntentUrl(challengeResult, resultShareUrl)
+      : null;
+  const downloadResultCard = () => {
+    if (!challengeResult) return;
+    downloadChallengeCard(challengeResult, baselineResult, challengeAttempt);
+  };
+
+  const challengePanel = {
+    phase: challengePhase,
+    elapsedMs,
+    attempt: challengeAttempt,
+    baseline: baselineResult,
+    result: challengeResult,
+    isSharedScenario,
+    shareNotice,
+    onStart: startChallenge,
+    onScaleBottleneck: scaleBottleneck,
+    onCopyLink: copyChallengeLink,
+    onDownloadCard: downloadResultCard,
+    xShareHref,
+  };
 
   const onDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -172,12 +336,16 @@ function Simulator() {
   );
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#080d13] text-slate-200">
-      <NodePalette />
-      <div className="relative min-w-0 flex-1" onDrop={onDrop} onDragOver={onDragOver}>
+    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-[#080d13] text-slate-200 md:flex-row">
+      <NodePalette challenge={challengePanel} />
+      <div
+        className="relative min-h-0 min-w-0 flex-1"
+        onDrop={onDrop}
+        onDragOver={onDragOver}
+      >
         <ReactFlow
           nodes={nodes}
-          edges={edges}
+          edges={visibleEdges}
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
@@ -200,7 +368,7 @@ function Simulator() {
             maskColor="rgba(8, 13, 19, 0.75)"
           />
         </ReactFlow>
-        <Toolbar />
+        <Toolbar challengeRunning={challengePhase === 'running'} />
         <MetricsPanel />
       </div>
     </div>

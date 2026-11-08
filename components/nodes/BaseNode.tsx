@@ -156,7 +156,7 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
 
   return (
     <div
-      className={`w-[252px] rounded-xl border bg-[#0d1520] shadow-xl shadow-black/40 transition-shadow ${
+      className={`sim-node-enter w-[252px] rounded-xl border bg-[#0d1520] shadow-xl shadow-black/40 transition-shadow ${
         selected ? 'ring-2 ring-sky-400/70' : ''
       }`}
       style={{ borderColor: `${meta.color}55` }}
@@ -213,7 +213,7 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
           </div>
           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
             <div
-              className="h-full rounded-full transition-[width] duration-500"
+              className="sim-utilization-fill h-full rounded-full transition-[width] duration-500"
               style={{ width: `${Math.min(100, utilization * 100)}%`, background: status }}
             />
           </div>
