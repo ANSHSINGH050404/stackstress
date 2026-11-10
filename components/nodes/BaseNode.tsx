@@ -33,14 +33,14 @@ function NumberField({
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="flex flex-col gap-0.5">
-      <span className="text-[9px] font-medium uppercase tracking-wider text-slate-500">
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#65706b]">
         {label}
       </span>
-      <span className="flex items-center gap-1 rounded-md border border-slate-700/80 bg-slate-900/70 px-1.5 focus-within:border-sky-500/70">
+      <span className="flex min-h-8 items-center gap-1 rounded border border-[#d8d4c9] bg-white/70 px-2 focus-within:border-[#267a68]">
         <input
           type="number"
-          className="nodrag w-full min-w-0 bg-transparent py-1 text-[11px] font-medium text-slate-200 outline-none"
+          className="nodrag w-full min-w-0 bg-transparent py-1 text-[12px] font-medium text-[#202b29] outline-none"
           value={Number.isFinite(value) ? value : 0}
           step={step}
           min={min}
@@ -50,7 +50,7 @@ function NumberField({
             onChange(Number.isFinite(next) ? next : 0);
           }}
         />
-        <span className="shrink-0 text-[9px] text-slate-500">{suffix}</span>
+        <span className="shrink-0 text-[10px] text-[#65706b]">{suffix}</span>
       </span>
     </label>
   );
@@ -59,16 +59,16 @@ function NumberField({
 function Metric({
   label,
   value,
-  tone = 'text-slate-200',
+  tone = 'text-[#303b37]',
 }: {
   label: string;
   value: string;
   tone?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-1 rounded bg-slate-900/40 px-1.5 py-1">
-      <span className="text-[9px] uppercase tracking-wider text-slate-500">{label}</span>
-      <span className={`text-[10px] font-semibold tabular-nums ${tone}`}>{value}</span>
+    <div className="flex items-baseline justify-between gap-1 border-t border-[#e4e0d6] py-1.5">
+      <span className="text-[10px] uppercase tracking-[0.08em] text-[#65706b]">{label}</span>
+      <span className={`text-[11px] font-semibold tabular-nums ${tone}`}>{value}</span>
     </div>
   );
 }
@@ -87,7 +87,7 @@ const NodeConfigForm = memo(function NodeConfigForm({
   onChange: (patch: Partial<ComponentConfig>) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2 px-3 pt-2.5">
+    <div className="grid grid-cols-2 gap-x-2 gap-y-2.5 px-3 pt-3">
       {isGenerator ? (
         <div className="col-span-2">
           <NumberField
@@ -156,21 +156,21 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
 
   return (
     <div
-      className={`sim-node-enter w-[252px] rounded-xl border bg-[#0d1520] shadow-xl shadow-black/40 transition-shadow ${
-        selected ? 'ring-2 ring-sky-400/70' : ''
+      className={`sim-node-enter w-[260px] rounded-md border bg-[#fbfaf5] shadow-[0_8px_24px_rgba(32,43,41,0.12)] transition-shadow ${
+        selected ? 'ring-2 ring-[#267a68]/70' : ''
       }`}
       style={{ borderColor: `${meta.color}55` }}
     >
       <div
-        className="flex items-center gap-2 rounded-t-xl border-b border-slate-800/80 px-3 py-2"
-        style={{ background: `linear-gradient(90deg, ${meta.color}24, transparent)` }}
+        className="flex items-center gap-2 rounded-t-md border-b border-[#e4e0d6] px-3 py-2.5"
+        style={{ background: `linear-gradient(90deg, ${meta.color}16, transparent)` }}
       >
         <span className="h-2 w-2 rounded-full" style={{ background: meta.color }} />
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-200">
+        <span className="min-w-0 truncate text-[12px] font-semibold tracking-[0.02em] text-[#202b29]">
           {component.name}
         </span>
         {metrics?.down ? (
-          <span className="ml-auto animate-pulse rounded bg-rose-500/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-rose-400">
+          <span className="ml-auto animate-pulse rounded bg-[#b63e35]/10 px-1.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#9c3029]">
             Down
           </span>
         ) : (
@@ -178,14 +178,14 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
             type="button"
             aria-label="Inject a 5 second outage"
             onClick={() => injectOutage(id, 5000)}
-            className="nodrag ml-auto rounded border border-rose-500/30 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-rose-400/80 transition-colors hover:bg-rose-500/10 hover:text-rose-300"
+            className="nodrag ml-auto min-h-7 rounded border border-[#b63e35]/30 px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#9c3029] transition-colors hover:bg-[#b63e35]/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b63e35]"
             title="Inject a 5 second outage"
           >
             Kill 5s
           </button>
         )}
         <span
-          className="ml-2 h-2 w-2 rounded-full shadow-[0_0_6px_currentColor]"
+          className="ml-2 h-2 w-2 rounded-full"
           style={{ background: status, color: status }}
           title={`Utilization ${formatPercent(utilization)}`}
           aria-label={`Utilization ${formatPercent(utilization)}`}
@@ -194,24 +194,24 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
 
       <NodeConfigForm component={component} isGenerator={isGenerator} onChange={set} />
 
-      <div className="mt-2.5 grid grid-cols-2 gap-1 px-3">
+      <div className="mt-2.5 grid grid-cols-2 gap-x-3 px-3">
         <Metric label="in" value={`${formatRate(metrics?.requestsIn ?? 0)}/s`} />
         <Metric label="out" value={`${formatRate(metrics?.requestsOut ?? 0)}/s`} />
         <Metric label="p95" value={formatLatency(metrics?.p95Latency ?? 0)} />
         <Metric
           label="errors"
           value={`${formatRate(metrics?.errors ?? 0)}/s`}
-          tone={metrics && metrics.errors > 0 ? 'text-rose-400' : 'text-slate-200'}
+          tone={metrics && metrics.errors > 0 ? 'text-[#b63e35]' : 'text-[#303b37]'}
         />
       </div>
 
       {!isGenerator ? (
         <div className="px-3 pt-2.5">
-          <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-500">
+          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.08em] text-[#65706b]">
             <span>Utilization</span>
             <span className="tabular-nums">{formatPercent(utilization)}</span>
           </div>
-          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e4e0d6]">
             <div
               className="sim-utilization-fill h-full rounded-full transition-[width] duration-500"
               style={{ width: `${Math.min(100, utilization * 100)}%`, background: status }}
@@ -220,7 +220,7 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between px-3 pb-2.5 pt-2 text-[9px] tabular-nums text-slate-500">
+      <div className="flex items-center justify-between px-3 pb-3 pt-2 text-[10px] tabular-nums text-[#65706b]">
         {isGenerator ? (
           <span>dropped {formatRate(metrics?.dropped ?? 0)}</span>
         ) : (
@@ -235,13 +235,13 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
         <Handle
           type="target"
           position={Position.Top}
-          style={{ width: 10, height: 10, background: meta.color, border: '2px solid #0d1520' }}
+          style={{ width: 10, height: 10, background: meta.color, border: '2px solid #fbfaf5' }}
         />
       ) : null}
       <Handle
         type="source"
         position={Position.Bottom}
-        style={{ width: 10, height: 10, background: meta.color, border: '2px solid #0d1520' }}
+        style={{ width: 10, height: 10, background: meta.color, border: '2px solid #fbfaf5' }}
       />
     </div>
   );

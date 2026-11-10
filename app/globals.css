@@ -1,8 +1,19 @@
 @import "tailwindcss";
 
 :root {
-  --background: #080d13;
-  --foreground: #e6edf3;
+  --background: #f4f1e8;
+  --foreground: #202b29;
+  --paper: #f4f1e8;
+  --surface: #fbfaf5;
+  --ink: #202b29;
+  --muted: #65706b;
+  --rule: #d8d4c9;
+  --grid: #e7e3d9;
+  --forest: #263a36;
+  --live: #267a68;
+  --warning: #9a6a16;
+  --danger: #b63e35;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -18,8 +29,83 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+.sim-canvas-surface {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(to right, rgb(83 94 84 / 5%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(83 94 84 / 5%) 1px, transparent 1px);
+  background-position: center center;
+  background-size: 24px 24px;
+}
+
+.sim-workspace-toolbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+
+.sim-control-button {
+  min-height: 34px;
+  touch-action: manipulation;
+}
+
+.sim-control-button:focus-visible,
+.sim-profile-button:focus-visible {
+  outline: 2px solid var(--live);
+  outline-offset: 2px;
+}
+
+.react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(32 43 41 / 10%);
+}
+
+.react-flow__controls-button {
+  border-bottom-color: var(--rule);
+  background: var(--surface);
+  fill: var(--ink);
+}
+
+.react-flow__controls-button:hover {
+  background: #efede4;
+}
+
+@media (max-width: 767px) {
+  .react-flow__controls-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .react-flow__minimap {
+    display: none;
+  }
+}
+
+.react-flow__minimap {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(32 43 41 / 10%);
+}
+
+.react-flow__attribution {
+  background: rgb(251 250 245 / 85%);
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .sim-sidebar-enter {
   animation: sim-slide-in 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.sim-inspector-enter {
+  animation: sim-slide-in-right 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
 }
 
 .sim-toolbar-enter {
@@ -43,6 +129,18 @@ body {
   from {
     opacity: 0;
     transform: translateX(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes sim-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
   }
 
   to {
@@ -77,6 +175,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .sim-sidebar-enter,
+  .sim-inspector-enter,
   .sim-toolbar-enter,
   .sim-panel-enter,
   .sim-node-enter,

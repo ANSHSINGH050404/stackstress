@@ -13,6 +13,7 @@ import '@xyflow/react/dist/style.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import MetricsPanel from './MetricsPanel';
 import NodePalette, { DRAG_MIME } from './NodePalette';
+import ChallengePanel from './ChallengePanel';
 import CacheNode from './nodes/CacheNode';
 import DatabaseNode from './nodes/DatabaseNode';
 import LoadBalancerNode from './nodes/LoadBalancerNode';
@@ -54,7 +55,7 @@ const LOAD_PROFILES: Array<{ id: LoadProfile; label: string }> = [
 const FIT_VIEW_OPTIONS = { padding: 0.22 };
 const DELETE_KEY_CODE = ['Backspace', 'Delete'];
 const DEFAULT_EDGE_OPTIONS = { type: 'smoothstep' as const };
-const MINIMAP_STYLE = { marginBottom: 150 };
+const MINIMAP_STYLE = { marginBottom: 12 };
 
 function ElapsedTime() {
   const elapsed = useSimulationStore((state) => {
@@ -63,7 +64,7 @@ function ElapsedTime() {
   });
 
   return (
-    <span className="px-1 text-[10px] tabular-nums text-slate-500">
+    <span className="px-1 text-[12px] tabular-nums text-[#65706b]">
       t {formatDuration(elapsed)}
     </span>
   );
@@ -77,73 +78,78 @@ function Toolbar({ challengeRunning }: { challengeRunning: boolean }) {
   const setLoadProfile = useSimulationStore((state) => state.setLoadProfile);
 
   return (
-    <div className="sim-toolbar-enter absolute left-4 top-4 z-10 flex items-center gap-1.5 rounded-xl border border-slate-800/80 bg-[#0a111a]/90 px-2 py-1.5 shadow-lg shadow-black/30 backdrop-blur">
-      <button
-        type="button"
-        aria-label={running ? 'Pause simulation' : 'Run simulation'}
-        onClick={() => setRunning(!running)}
-        className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-          running
-            ? 'bg-amber-400/15 text-amber-300 hover:bg-amber-400/25'
-            : 'bg-emerald-400/15 text-emerald-300 hover:bg-emerald-400/25'
-        }`}
-      >
-        <span className="flex items-center gap-[2px]">
-          {running ? (
-            <>
-              <span className="h-2 w-[2px] rounded-sm bg-current" />
-              <span className="h-2 w-[2px] rounded-sm bg-current" />
-            </>
-          ) : (
-            <span
-              style={{
-                width: 0,
-                height: 0,
-                borderTop: '4px solid transparent',
-                borderBottom: '4px solid transparent',
-                borderLeft: '6px solid currentColor',
-              }}
-            />
-          )}
+    <div className="sim-toolbar-enter sim-workspace-toolbar z-10 grid h-[84px] shrink-0 grid-rows-[34px_34px] gap-1.5 px-3 py-1 md:flex md:min-h-[58px] md:h-auto md:items-center md:gap-2 md:px-5 md:py-2">
+      <div className="flex min-w-0 items-center gap-1.5 md:gap-2">
+        <button
+          type="button"
+          aria-label={running ? 'Pause simulation' : 'Run simulation'}
+          onClick={() => setRunning(!running)}
+          className={`sim-control-button flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-[12px] font-semibold transition-colors ${
+            running
+              ? 'bg-[#9a6a16]/10 text-[#80540e] hover:bg-[#9a6a16]/15'
+              : 'bg-[#267a68] text-white hover:bg-[#1e6859]'
+          }`}
+        >
+          <span className="flex items-center gap-[2px]">
+            {running ? (
+              <>
+                <span className="h-2 w-[2px] rounded-sm bg-current" />
+                <span className="h-2 w-[2px] rounded-sm bg-current" />
+              </>
+            ) : (
+              <span
+                style={{
+                  width: 0,
+                  height: 0,
+                  borderTop: '4px solid transparent',
+                  borderBottom: '4px solid transparent',
+                  borderLeft: '6px solid currentColor',
+                }}
+              />
+            )}
+          </span>
+          {running ? 'Pause' : 'Run'}
+        </button>
+        <button
+          type="button"
+          aria-label="Reset simulation"
+          onClick={() => {
+            resetSimulation();
+            resetMetrics();
+          }}
+          className="sim-control-button shrink-0 whitespace-nowrap rounded-md px-3 text-[12px] font-medium text-[#65706b] transition-colors hover:bg-[#efede4] hover:text-[#202b29]"
+        >
+          Reset
+        </button>
+        <ElapsedTime />
+      </div>
+
+      <span className="mx-1 hidden h-5 w-px bg-[#d8d4c9] md:block" />
+      <div className="flex min-w-0 items-center gap-2 md:gap-2.5">
+        <span className="shrink-0 pl-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#65706b]">
+          Load
         </span>
-        {running ? 'Pause' : 'Run'}
-      </button>
-      <button
-        type="button"
-        aria-label="Reset simulation"
-        onClick={() => {
-          resetSimulation();
-          resetMetrics();
-        }}
-        className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-800/70 hover:text-slate-200"
-      >
-        Reset
-      </button>
-      <ElapsedTime />
-      <span className="ml-1 h-4 w-px bg-slate-800" />
-      <span className="pl-1 text-[9px] font-medium uppercase tracking-wider text-slate-500">
-        Load
-      </span>
-      <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/60 p-0.5">
-        {LOAD_PROFILES.map((profile) => (
-          <button
-            key={profile.id}
-            type="button"
-            aria-label={`Select ${profile.label} load profile`}
-            onClick={() => {
-              setLoadProfile(profile.id);
-              applyLoadProfile(profile.id);
-            }}
-            disabled={challengeRunning}
-            className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
-              loadProfile === profile.id
-                ? 'bg-slate-700/80 text-slate-100'
-                : 'text-slate-500 hover:text-slate-300'
-            } disabled:cursor-not-allowed disabled:opacity-40`}
-          >
-            {profile.label}
-          </button>
-        ))}
+        <div className="flex min-w-0 items-center gap-0.5 rounded-md border border-[#d8d4c9] bg-[#f4f1e8] p-0.5">
+          {LOAD_PROFILES.map((profile) => (
+            <button
+              key={profile.id}
+              type="button"
+              aria-label={`Select ${profile.label} load profile`}
+              onClick={() => {
+                setLoadProfile(profile.id);
+                applyLoadProfile(profile.id);
+              }}
+              disabled={challengeRunning}
+              className={`sim-profile-button min-h-[30px] shrink-0 whitespace-nowrap rounded px-2.5 text-[11px] font-medium transition-colors ${
+                loadProfile === profile.id
+                  ? 'bg-[#263a36] text-white'
+                  : 'text-[#65706b] hover:bg-[#e9e6dc] hover:text-[#202b29]'
+              } disabled:cursor-not-allowed disabled:opacity-40`}
+            >
+              {profile.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -182,12 +188,12 @@ function Simulator() {
           targetMetrics?.down ||
           (targetMetrics?.dropped ?? 0) > 0 ||
           (targetMetrics?.utilization ?? 0) > 0.9
-            ? '#fb7185'
+            ? '#b63e35'
             : (targetMetrics?.utilization ?? 0) > 0.7
-              ? '#fbbf24'
-              : active
-                ? '#38bdf8'
-                : '#334155';
+              ? '#9a6a16'
+            : active
+                ? '#267a68'
+                : '#a8afa6';
         return {
           ...edge,
           animated: active,
@@ -244,6 +250,14 @@ function Simulator() {
         state.nodes,
         state.summary
       );
+      if (!result.passed && result.bottleneckId) {
+        void fitView({
+          nodes: [{ id: result.bottleneckId }],
+          padding: 0.65,
+          maxZoom: 0.9,
+          duration: 650,
+        });
+      }
       setChallengeResult(result);
       setBaselineResult((baseline) => baseline ?? result);
       setChallengeAttempt((attempt) => attempt + 1);
@@ -253,7 +267,7 @@ function Simulator() {
       state.setLoadProfile('steady');
       applyLoadProfile('steady');
     });
-  }, [challengePhase]);
+  }, [challengePhase, fitView]);
 
   const startChallenge = () => {
     setShareNotice(null);
@@ -336,41 +350,44 @@ function Simulator() {
   );
 
   return (
-    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-[#080d13] text-slate-200 md:flex-row">
-      <NodePalette challenge={challengePanel} />
-      <div
-        className="relative min-h-0 min-w-0 flex-1"
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={visibleEdges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          colorMode="dark"
-          fitView
-          fitViewOptions={FIT_VIEW_OPTIONS}
-          minZoom={0.25}
-          deleteKeyCode={DELETE_KEY_CODE}
-          defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-        >
-          <Background gap={22} size={1} color="#16202c" />
-          <Controls position="top-right" />
-          <MiniMap
-            position="bottom-right"
-            pannable
-            zoomable
-            style={MINIMAP_STYLE}
-            nodeColor="#334155"
-            maskColor="rgba(8, 13, 19, 0.75)"
-          />
-        </ReactFlow>
+    <div className="flex h-dvh w-full min-w-0 flex-col overflow-hidden bg-[var(--paper)] text-[var(--ink)] md:flex-row">
+      <NodePalette />
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Toolbar challengeRunning={challengePhase === 'running'} />
+        <div
+          className="sim-canvas-surface relative min-h-0 min-w-0 flex-1"
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+        >
+          <ReactFlow
+            nodes={nodes}
+            edges={visibleEdges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            colorMode="light"
+            fitView
+            fitViewOptions={FIT_VIEW_OPTIONS}
+            minZoom={0.25}
+            deleteKeyCode={DELETE_KEY_CODE}
+            defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+          >
+            <Background gap={24} size={1} color="#d8d8ce" />
+            <Controls position="top-right" />
+            <MiniMap
+              position="bottom-right"
+              pannable
+              zoomable
+              style={MINIMAP_STYLE}
+              nodeColor="#718078"
+              maskColor="rgba(244, 241, 232, 0.72)"
+            />
+          </ReactFlow>
+        </div>
         <MetricsPanel />
-      </div>
+      </main>
+      <ChallengePanel {...challengePanel} />
     </div>
   );
 }

@@ -42,7 +42,7 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-function ChartCard({
+function MetricChart({
   label,
   value,
   color,
@@ -54,16 +54,21 @@ function ChartCard({
   values: number[];
 }) {
   return (
-    <div className="min-w-[150px] flex-1 rounded-lg border border-slate-800/80 bg-slate-900/40 px-3 py-2">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+    <div className="min-w-0 border-r border-[#D8D4C9] px-1.5 py-1 last:border-r-0 md:min-w-[204px] md:flex-1 md:px-4 md:py-3">
+      <div className="flex min-w-0 flex-col items-start gap-0.5 md:flex-row md:items-baseline md:justify-between md:gap-2">
+        <span className="max-w-full truncate text-[8px] font-medium uppercase tracking-[0.08em] text-[#65706B] md:text-[11px] md:tracking-[0.1em]">
           {label}
         </span>
-        <span className="text-sm font-semibold tabular-nums" style={{ color }}>
+        <span
+          className="max-w-full whitespace-nowrap text-[12px] font-semibold leading-tight tabular-nums text-[#202B29] md:text-[20px] md:leading-normal"
+          style={{ color }}
+        >
           {value}
         </span>
       </div>
-      <Sparkline values={values} color={color} />
+      <div className="hidden md:block">
+        <Sparkline values={values} color={color} />
+      </div>
     </div>
   );
 }
@@ -87,73 +92,81 @@ export default function MetricsPanel() {
   }
 
   return (
-    <div className="sim-panel-enter pointer-events-auto absolute bottom-4 left-4 right-4 z-10 flex gap-2 overflow-x-auto rounded-xl border border-slate-800/80 bg-[#0a111a]/90 p-2 shadow-2xl shadow-black/40 backdrop-blur">
-      <div className="flex w-52 shrink-0 flex-col justify-between rounded-lg border border-slate-800/80 bg-slate-900/40 px-3 py-2">
-        <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+    <section
+      aria-label="Live simulation metrics"
+      tabIndex={0}
+      className="sim-panel-enter z-10 grid h-[150px] shrink-0 grid-rows-[20px_44px_1fr] gap-1 overflow-hidden border-t border-[#D8D4C9] bg-[#FBFAF5] px-3 py-1 text-[#202B29] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#267A68] md:flex md:gap-0 md:overflow-x-auto md:py-3"
+    >
+      <div className="contents md:flex md:w-[240px] md:shrink-0 md:flex-col md:justify-between md:border-r md:border-[#D8D4C9] md:px-4 md:py-2">
+        <div className="flex min-w-0 items-center gap-2 text-[10px] font-medium uppercase tracking-[0.1em] text-[#65706B] md:text-[11px]">
           <span
             className={`h-1.5 w-1.5 rounded-full ${
-              running ? 'animate-pulse bg-emerald-400' : 'bg-slate-600'
+              running ? 'animate-pulse bg-[#267A68]' : 'bg-[#A7AAA1]'
             }`}
           />
-          <span>{running ? 'Simulating' : 'Paused'}</span>
-          <span className="ml-auto tabular-nums text-slate-400">
+          <span className={running ? 'font-semibold text-[#267A68]' : ''}>
+            {running ? 'Simulating' : 'Paused'}
+          </span>
+          <span className="ml-auto whitespace-nowrap font-mono tabular-nums text-[#65706B]">
             {formatDuration(elapsed)}
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-2 pt-2">
-          <div>
-            <div className="text-[9px] uppercase tracking-wider text-slate-500">
+        <div className="grid min-w-0 grid-cols-4 gap-1 md:grid-cols-2 md:gap-x-3 md:gap-y-1.5 md:pt-2">
+          <div className="min-w-0">
+            <div className="truncate text-[8px] uppercase leading-3 tracking-[0.04em] text-[#65706B] md:text-[11px] md:leading-normal md:tracking-[0.08em]">
               Completed
             </div>
-            <div className="text-sm font-semibold tabular-nums text-slate-200">
+            <div className="whitespace-nowrap text-[12px] font-semibold leading-4 tabular-nums text-[#202B29] md:text-[18px] md:leading-6">
               {Math.round(summary?.totalCompleted ?? 0).toLocaleString()}
             </div>
           </div>
-          <div>
-            <div className="text-[9px] uppercase tracking-wider text-slate-500">
+          <div className="min-w-0">
+            <div className="truncate text-[8px] uppercase leading-3 tracking-[0.04em] text-[#65706B] md:text-[11px] md:leading-normal md:tracking-[0.08em]">
               Dropped
             </div>
-            <div className="text-sm font-semibold tabular-nums text-rose-400">
+            <div className="whitespace-nowrap text-[12px] font-semibold leading-4 tabular-nums text-[#B63E35] md:text-[18px] md:leading-6">
               {Math.round(summary?.totalDropped ?? 0).toLocaleString()}
             </div>
           </div>
-          <div>
-            <div className="text-[9px] uppercase tracking-wider text-slate-500">
+          <div className="min-w-0">
+            <div className="truncate text-[8px] uppercase leading-3 tracking-[0.04em] text-[#65706B] md:text-[11px] md:leading-normal md:tracking-[0.08em]">
               p50
             </div>
-            <div className="text-[11px] font-semibold tabular-nums text-slate-300">
+            <div className="whitespace-nowrap text-[12px] font-semibold leading-4 tabular-nums text-[#202B29] md:text-[18px] md:leading-6">
               {formatLatency(summary?.p50Latency ?? 0)}
             </div>
           </div>
-          <div>
-            <div className="text-[9px] uppercase tracking-wider text-slate-500">
+          <div className="min-w-0">
+            <div className="truncate text-[8px] uppercase leading-3 tracking-[0.04em] text-[#65706B] md:text-[11px] md:leading-normal md:tracking-[0.08em]">
               p99
             </div>
-            <div className="text-[11px] font-semibold tabular-nums text-slate-300">
+            <div className="whitespace-nowrap text-[12px] font-semibold leading-4 tabular-nums text-[#202B29] md:text-[18px] md:leading-6">
               {formatLatency(summary?.p99Latency ?? 0)}
             </div>
           </div>
         </div>
       </div>
 
-      <ChartCard
-        label="Throughput"
-        value={`${formatRate(latest?.rps ?? 0)}/s`}
-        color="#38bdf8"
-        values={throughput}
-      />
-      <ChartCard
-        label="p95 latency"
-        value={formatLatency(latest?.p95 ?? 0)}
-        color="#fbbf24"
-        values={p95}
-      />
-      <ChartCard
-        label="Error rate"
-        value={formatPercent(latest?.errorRate ?? 0)}
-        color="#fb7185"
-        values={errorRate}
-      />
-    </div>
+      <div className="grid min-w-0 grid-cols-3 gap-0 md:contents">
+        <MetricChart
+          label="Throughput"
+          value={`${formatRate(latest?.rps ?? 0)}/s`}
+          color="#267A68"
+          values={throughput}
+        />
+        <MetricChart
+          label="p95 latency"
+          value={formatLatency(latest?.p95 ?? 0)}
+          color="#9A6A16"
+          values={p95}
+        />
+        <MetricChart
+          label="Error rate"
+          value={formatPercent(latest?.errorRate ?? 0)}
+          color="#B63E35"
+          values={errorRate}
+        />
+      </div>
+    </section>
   );
 }
