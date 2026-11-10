@@ -55,7 +55,7 @@ const LOAD_PROFILES: Array<{ id: LoadProfile; label: string }> = [
 const FIT_VIEW_OPTIONS = { padding: 0.22 };
 const DELETE_KEY_CODE = ['Backspace', 'Delete'];
 const DEFAULT_EDGE_OPTIONS = { type: 'smoothstep' as const };
-const MINIMAP_STYLE = { marginBottom: 12 };
+const MINIMAP_STYLE = { marginBottom: 12, width: 168, height: 104 };
 
 function ElapsedTime() {
   const elapsed = useSimulationStore((state) => {
@@ -64,7 +64,7 @@ function ElapsedTime() {
   });
 
   return (
-    <span className="px-1 text-[12px] tabular-nums text-[#65706b]">
+    <span className="px-1 font-mono text-[11px] tabular-nums text-muted">
       t {formatDuration(elapsed)}
     </span>
   );
@@ -78,16 +78,16 @@ function Toolbar({ challengeRunning }: { challengeRunning: boolean }) {
   const setLoadProfile = useSimulationStore((state) => state.setLoadProfile);
 
   return (
-    <div className="sim-toolbar-enter sim-workspace-toolbar z-10 grid h-[84px] shrink-0 grid-rows-[34px_34px] gap-1.5 px-3 py-1 md:flex md:min-h-[58px] md:h-auto md:items-center md:gap-2 md:px-5 md:py-2">
-      <div className="flex min-w-0 items-center gap-1.5 md:gap-2">
+    <div className="sim-workspace-toolbar z-10 grid h-[84px] shrink-0 grid-rows-[34px_34px] gap-1.5 px-3 py-1 lg:flex lg:min-h-[54px] lg:h-auto lg:items-center lg:gap-2 lg:px-5 lg:py-2">
+      <div className="flex min-w-0 items-center gap-1.5 lg:gap-2">
         <button
           type="button"
           aria-label={running ? 'Pause simulation' : 'Run simulation'}
           onClick={() => setRunning(!running)}
-          className={`sim-control-button flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-[12px] font-semibold transition-colors ${
+          className={`sim-control-button flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[3px] px-3 text-[12px] font-semibold transition-colors ${
             running
-              ? 'bg-[#9a6a16]/10 text-[#80540e] hover:bg-[#9a6a16]/15'
-              : 'bg-[#267a68] text-white hover:bg-[#1e6859]'
+              ? 'bg-warning/10 text-warning-ink hover:bg-warning/15'
+              : 'bg-ink text-surface hover:bg-[#243642]'
           }`}
         >
           <span className="flex items-center gap-[2px]">
@@ -117,19 +117,19 @@ function Toolbar({ challengeRunning }: { challengeRunning: boolean }) {
             resetSimulation();
             resetMetrics();
           }}
-          className="sim-control-button shrink-0 whitespace-nowrap rounded-md px-3 text-[12px] font-medium text-[#65706b] transition-colors hover:bg-[#efede4] hover:text-[#202b29]"
+          className="sim-control-button shrink-0 whitespace-nowrap rounded-[3px] px-3 text-[12px] font-medium text-muted transition-colors hover:bg-paper hover:text-ink"
         >
           Reset
         </button>
         <ElapsedTime />
       </div>
 
-      <span className="mx-1 hidden h-5 w-px bg-[#d8d4c9] md:block" />
-      <div className="flex min-w-0 items-center gap-2 md:gap-2.5">
-        <span className="shrink-0 pl-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#65706b]">
+      <span className="mx-1 hidden h-5 w-px bg-rule lg:block" />
+      <div className="flex min-w-0 items-center gap-2 lg:gap-2.5">
+        <span className="shrink-0 pl-1 text-[12px] font-medium text-muted">
           Load
         </span>
-        <div className="flex min-w-0 items-center gap-0.5 rounded-md border border-[#d8d4c9] bg-[#f4f1e8] p-0.5">
+        <div className="flex min-w-0 items-center gap-0.5 rounded-[3px] border border-rule bg-paper p-0.5">
           {LOAD_PROFILES.map((profile) => (
             <button
               key={profile.id}
@@ -140,10 +140,10 @@ function Toolbar({ challengeRunning }: { challengeRunning: boolean }) {
                 applyLoadProfile(profile.id);
               }}
               disabled={challengeRunning}
-              className={`sim-profile-button min-h-[30px] shrink-0 whitespace-nowrap rounded px-2.5 text-[11px] font-medium transition-colors ${
+              className={`sim-profile-button min-h-[30px] shrink-0 whitespace-nowrap rounded-[2px] px-2.5 text-[11px] font-medium transition-colors ${
                 loadProfile === profile.id
-                  ? 'bg-[#263a36] text-white'
-                  : 'text-[#65706b] hover:bg-[#e9e6dc] hover:text-[#202b29]'
+                  ? 'bg-ink text-surface'
+                  : 'text-muted hover:bg-surface hover:text-ink'
               } disabled:cursor-not-allowed disabled:opacity-40`}
             >
               {profile.label}
@@ -161,6 +161,7 @@ function Simulator() {
   const history = useSimulationStore((state) => state.history);
   const metricsById = useSimulationStore((state) => state.metricsById);
   const running = useSimulationStore((state) => state.running);
+  const loadProfile = useSimulationStore((state) => state.loadProfile);
   const isSharedScenario = useSimulationStore((state) => state.sharedScenarioLoaded);
   const onNodesChange = useSimulationStore((state) => state.onNodesChange);
   const onEdgesChange = useSimulationStore((state) => state.onEdgesChange);
@@ -188,12 +189,12 @@ function Simulator() {
           targetMetrics?.down ||
           (targetMetrics?.dropped ?? 0) > 0 ||
           (targetMetrics?.utilization ?? 0) > 0.9
-            ? '#b63e35'
+            ? 'var(--alarm)'
             : (targetMetrics?.utilization ?? 0) > 0.7
-              ? '#9a6a16'
+              ? 'var(--warning)'
             : active
-                ? '#267a68'
-                : '#a8afa6';
+                ? 'var(--live)'
+                : 'var(--faint)';
         return {
           ...edge,
           animated: active,
@@ -350,9 +351,19 @@ function Simulator() {
   );
 
   return (
-    <div className="flex h-dvh w-full min-w-0 flex-col overflow-hidden bg-[var(--paper)] text-[var(--ink)] md:flex-row">
+    <div className="grid h-dvh w-full min-w-0 grid-rows-[104px_minmax(0,1fr)_52px] overflow-hidden bg-paper pb-[env(safe-area-inset-bottom)] text-ink lg:grid-cols-[248px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_52px] xl:grid-cols-[248px_minmax(0,1fr)_320px] xl:grid-rows-[minmax(0,1fr)]">
+      <a
+        href="#workspace"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-[3px] focus:bg-ink focus:px-3 focus:py-2 focus:text-[12px] focus:font-semibold focus:text-surface"
+      >
+        Skip to canvas
+      </a>
       <NodePalette />
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <main
+        id="workspace"
+        tabIndex={-1}
+        className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-live lg:col-start-2 lg:row-start-1"
+      >
         <Toolbar challengeRunning={challengePhase === 'running'} />
         <div
           className="sim-canvas-surface relative min-h-0 min-w-0 flex-1"
@@ -373,17 +384,31 @@ function Simulator() {
             deleteKeyCode={DELETE_KEY_CODE}
             defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
           >
-            <Background gap={24} size={1} color="#d8d8ce" />
+            <Background gap={24} size={1} color="#cfdae2" />
             <Controls position="top-right" />
             <MiniMap
               position="bottom-right"
               pannable
               zoomable
               style={MINIMAP_STYLE}
-              nodeColor="#718078"
-              maskColor="rgba(244, 241, 232, 0.72)"
+              nodeColor="#5c6b75"
+              maskColor="rgba(232, 238, 242, 0.72)"
             />
           </ReactFlow>
+          <div className="pointer-events-none absolute bottom-3 left-3 z-10 hidden items-center gap-4 border border-rule bg-surface px-3 py-1.5 lg:flex">
+            <span className="font-mono text-[10px] text-faint">
+              SHEET <span className="text-ink">01</span>
+            </span>
+            <span className="font-mono text-[10px] text-faint">
+              LOAD <span className="text-ink uppercase">{loadProfile}</span>
+            </span>
+            <span className="font-mono text-[10px] text-faint">
+              NODES{' '}
+              <span className="tabular-nums text-ink">
+                {String(nodes.length).padStart(2, '0')}
+              </span>
+            </span>
+          </div>
         </div>
         <MetricsPanel />
       </main>

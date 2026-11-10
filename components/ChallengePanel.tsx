@@ -36,11 +36,9 @@ function Metric({
   value: string;
 }) {
   return (
-    <div className="border-t border-[#d8d4c9] pt-2.5">
-      <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#65706b]">
-        {label}
-      </div>
-      <div className="mt-1 text-[17px] font-semibold tabular-nums tracking-tight text-[#202b29]">
+    <div className="border-t border-rule pt-2.5">
+      <div className="text-[11px] text-muted">{label}</div>
+      <div className="mt-1 font-mono text-[16px] font-semibold tabular-nums tracking-tight text-ink">
         {value}
       </div>
     </div>
@@ -67,20 +65,20 @@ export default function ChallengePanel({
   const progress = Math.min(100, (elapsedMs / SPIKE_CHALLENGE_DURATION_MS) * 100);
   const phaseLabel =
     phase === 'running'
-      ? 'Live run'
+      ? 'Running'
       : phase === 'complete'
         ? result?.passed
           ? 'Passed'
-          : 'Needs work'
+          : 'Failed'
         : 'Ready';
   const phaseColor =
     phase === 'running'
-      ? 'border-[#267a68]/25 bg-[#267a68]/10 text-[#176454]'
+      ? 'border-live/30 bg-live/10 text-live-ink'
       : phase === 'complete'
         ? result?.passed
-          ? 'border-[#267a68]/25 bg-[#267a68]/10 text-[#176454]'
-          : 'border-[#b63e35]/25 bg-[#b63e35]/10 text-[#9c3029]'
-        : 'border-[#d8d4c9] bg-[#f4f1e8] text-[#65706b]';
+          ? 'border-live/30 bg-live/10 text-live-ink'
+          : 'border-alarm/30 bg-alarm/10 text-alarm-ink'
+        : 'border-rule bg-paper text-muted';
   const failureReasons = result
     ? [
         result.generatedRps <= 0 ? 'No traffic reached the system.' : null,
@@ -92,31 +90,29 @@ export default function ChallengePanel({
           : null,
       ].filter((reason): reason is string => reason !== null)
     : [];
+  const challengeSeconds = SPIKE_CHALLENGE_DURATION_MS / 1000;
 
   return (
     <aside
-      className={`sim-inspector-enter z-20 flex w-full shrink-0 flex-col border-t border-[#d8d4c9] bg-[#fbfaf5] md:relative md:h-full md:max-h-none md:w-[320px] md:border-l md:border-t-0 ${
+      className={`col-start-1 row-start-3 z-20 flex h-full w-full shrink-0 flex-col border-t border-rule bg-surface lg:col-start-2 lg:row-start-2 xl:static xl:col-start-3 xl:row-start-1 xl:max-h-none xl:w-full xl:border-l xl:border-t-0 ${
         isExpanded
-        ? 'fixed inset-x-0 bottom-0 z-40 h-[min(72dvh,28rem)] max-h-[72dvh] shadow-[0_-12px_40px_rgba(32,43,41,0.16)] md:inset-auto md:shadow-none'
-          : 'relative h-[52px]'
+        ? 'fixed inset-x-0 bottom-0 z-40 h-[min(72dvh,28rem)] max-h-[72dvh] shadow-[0_-12px_40px_rgba(21,34,44,0.16)] xl:static xl:inset-auto xl:h-full xl:shadow-none'
+          : 'relative h-full xl:static'
       }`}
     >
-      <header className="flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-[#d8d4c9] px-3 md:h-auto md:px-5 md:py-3.5">
-        <div className="min-w-0 md:hidden">
-          <p className="text-[13px] font-semibold text-[#202b29]">Challenge</p>
-          <p className="truncate text-[11px] text-[#65706b]">Survive the spike</p>
+      <header className="flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-rule px-3 xl:h-auto xl:px-5 xl:py-4">
+        <div className="min-w-0 xl:hidden">
+          <p className="text-[13px] font-semibold text-ink">Spike absorption</p>
+          <p className="truncate font-mono text-[10px] text-muted">TEST 01</p>
         </div>
-        <div className="hidden md:block">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#65706b]">
-            Run inspector
-          </p>
-          <p className="mt-1 text-[12px] text-[#65706b]">
-            Scenario <span className="font-mono text-[#202b29]">01</span>
+        <div className="hidden xl:block">
+          <p className="font-mono text-[10px] tracking-[0.04em] text-muted">
+            TEST 01
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span
-            className={`rounded border px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] md:px-2.5 md:text-[10px] md:tracking-[0.1em] ${phaseColor}`}
+            className={`rounded-[2px] border px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.08em] xl:px-2.5 xl:text-[10px] ${phaseColor}`}
             aria-live="polite"
           >
             {phaseLabel}
@@ -131,7 +127,7 @@ export default function ChallengePanel({
                 current === 'collapsed' ? 'expanded' : 'collapsed'
               )
             }
-            className="flex min-h-11 shrink-0 items-center gap-1 rounded-md border border-[#d8d4c9] px-2.5 text-[11px] font-semibold text-[#263a36] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#267a68] md:hidden"
+            className="flex min-h-11 shrink-0 items-center gap-1 rounded-[3px] border border-rule px-2.5 text-[11px] font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-live xl:hidden"
           >
             {isExpanded ? 'Close' : 'Details'}
             <span aria-hidden="true">{isExpanded ? '−' : '+'}</span>
@@ -142,25 +138,23 @@ export default function ChallengePanel({
       <section
         id="mobile-challenge-content"
         aria-labelledby="challenge-title"
-        className={`min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-4 md:px-5 md:py-5 ${
-          isExpanded ? 'flex' : 'hidden md:flex'
+        tabIndex={0}
+        className={`min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-live xl:px-5 xl:py-5 ${
+          isExpanded ? 'flex' : 'hidden xl:flex'
         }`}
       >
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#267a68]">
-          Traffic spike
-        </p>
         <h2
           id="challenge-title"
-          className="mt-2 text-[24px] font-semibold leading-[1.08] tracking-[-0.04em] text-[#202b29] text-balance"
+          className="text-[24px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink text-balance"
         >
-          Survive the spike
+          Spike absorption
         </h2>
-        <p className="mt-2.5 text-[13px] leading-relaxed text-[#65706b]">
+        <p className="mt-2.5 text-[12.5px] leading-relaxed text-muted">
           Prove the architecture can absorb a sudden 3× increase in demand.
         </p>
 
         {isSharedScenario && (
-          <p className="mt-4 border-l-2 border-[#267a68] bg-[#267a68]/[0.06] px-3 py-2.5 text-[12px] leading-relaxed text-[#355c52]">
+          <p className="mt-4 border-l-2 border-live bg-live/[0.06] px-3 py-2.5 text-[12px] leading-relaxed text-live-ink">
             Shared architecture loaded. Run it or make it your own.
           </p>
         )}
@@ -169,30 +163,29 @@ export default function ChallengePanel({
           <button
             type="button"
             onClick={onStart}
-            className="mt-5 flex min-h-11 w-full items-center justify-between rounded-md bg-[#263a36] px-4 py-3 text-left text-[13px] font-semibold text-white transition-colors hover:bg-[#1e302c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#267a68]"
+            className="mt-5 flex min-h-11 w-full items-center justify-between rounded-[3px] bg-ink px-4 py-3 text-left text-[13px] font-semibold text-surface transition-colors hover:bg-[#243642] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-live"
           >
-            <span>Run {SPIKE_CHALLENGE_DURATION_MS / 1000}-second challenge</span>
-            <span aria-hidden="true" className="text-sm">↗</span>
+            <span>Run {challengeSeconds}-second test</span>
           </button>
         )}
 
         {phase === 'running' && (
-          <div className="mt-5 border-l-2 border-[#267a68] bg-[#267a68]/[0.06] p-3.5" aria-live="polite">
+          <div className="mt-5 border-l-2 border-live bg-live/[0.06] p-3.5" aria-live="polite">
             <div className="flex items-center justify-between gap-2 text-[12px]">
-              <span className="flex items-center gap-2 font-semibold text-[#176454]">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-[#267a68]" />
+              <span className="flex items-center gap-2 font-semibold text-live-ink">
+                <span className="h-2 w-2 animate-pulse rounded-[1px] bg-live" />
                 Traffic in progress
               </span>
-              <span className="font-mono tabular-nums text-[#65706b]">
+              <span className="font-mono tabular-nums text-muted">
                 {Math.min(
-                  SPIKE_CHALLENGE_DURATION_MS / 1000,
+                  challengeSeconds,
                   Math.floor(elapsedMs / 1000)
                 )}
-                /{SPIKE_CHALLENGE_DURATION_MS / 1000}s
+                /{challengeSeconds}s
               </span>
             </div>
             <div
-              className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#d8d4c9]"
+              className="mt-3 h-1.5 overflow-hidden rounded-[1px] bg-rule"
               role="progressbar"
               aria-label="Challenge progress"
               aria-valuemin={0}
@@ -200,11 +193,11 @@ export default function ChallengePanel({
               aria-valuenow={Math.round(progress)}
             >
               <div
-                className="sim-progress-fill h-full w-full origin-left rounded-full bg-[#267a68]"
+                className="sim-progress-fill h-full w-full origin-left rounded-[1px] bg-live"
                 style={{ transform: `scaleX(${progress / 100})` }}
               />
             </div>
-            <p className="mt-2.5 text-[12px] leading-relaxed text-[#65706b]">
+            <p className="mt-2.5 text-[12px] leading-relaxed text-muted">
               Watch the graph and telemetry. Pause or tune a component from the canvas.
             </p>
           </div>
@@ -214,19 +207,19 @@ export default function ChallengePanel({
           <div
             className={`mt-5 border-l-2 p-3.5 ${
               result.passed
-                ? 'border-[#267a68] bg-[#267a68]/[0.06]'
-                : 'border-[#b63e35] bg-[#b63e35]/[0.06]'
+                ? 'border-live bg-live/[0.06]'
+                : 'border-alarm bg-alarm/[0.06]'
             }`}
             aria-live="polite"
           >
             <p
               className={`text-[15px] font-semibold ${
-                result.passed ? 'text-[#176454]' : 'text-[#9c3029]'
+                result.passed ? 'text-live-ink' : 'text-alarm-ink'
               }`}
             >
-              {result.passed ? 'System survived' : 'Bottleneck found'}
+              {result.passed ? 'Test passed' : 'Bottleneck found'}
             </p>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-[#4f5e57]">
+            <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
               {result.passed
                 ? 'The system stayed within both challenge targets.'
                 : failureReasons.length > 0
@@ -234,48 +227,48 @@ export default function ChallengePanel({
                   : 'The system exceeded a challenge target. Adjust a component and retry.'}
             </p>
             {!result.passed && result.bottleneckName && (
-              <p className="mt-3 border-t border-[#d8d4c9] pt-2.5 text-[12px] text-[#65706b]">
+              <p className="mt-3 border-t border-rule pt-2.5 text-[12px] text-muted">
                 Focused in canvas:{' '}
-                <span className="font-semibold text-[#202b29]">{result.bottleneckName}</span>
+                <span className="font-semibold text-ink">{result.bottleneckName}</span>
               </p>
             )}
           </div>
         )}
 
-        <div className="mt-6 grid grid-cols-[2fr_1fr] gap-3 border-y border-[#d8d4c9] py-3" aria-label="Traffic profile">
+        <div className="mt-6 grid grid-cols-[2fr_1fr] gap-3 border-y border-rule py-3" aria-label="Traffic profile">
           <div className="px-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#65706b]">
-                Steady
-              </span>
-              <span className="font-mono text-[10px] text-[#7c857e]">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] font-medium text-muted">Steady</span>
+              <span className="font-mono text-[10px] text-faint">
                 0–{SPIKE_WINDOW_START_MS / 1000}s
               </span>
             </div>
-            <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-[#e3e0d6]">
-              <div className="h-full w-2/3 rounded-full bg-[#89938b]" />
+            <div className="mt-2.5 h-1 overflow-hidden rounded-[1px] bg-rule">
+              <div className="h-full w-2/3 rounded-[1px] bg-faint" />
             </div>
           </div>
-          <div className="border-l border-[#d8d4c9] pl-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#9a6a16]">
-              Spike · 3×
+          <div className="border-l border-rule pl-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="whitespace-nowrap text-[11px] font-medium text-warning-ink">
+                Spike 3×
+              </span>
             </div>
-            <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-[#ead9b7]">
-              <div className="h-full w-full rounded-full bg-[#b98025]" />
+            <div className="mt-2.5 h-1 overflow-hidden rounded-[1px] bg-warning/15">
+              <div className="h-full w-full rounded-[1px] bg-warning" />
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 border-b border-[#d8d4c9] py-3">
+        <div className="grid grid-cols-2 gap-3 border-b border-rule py-3">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.08em] text-[#65706b]">Latency budget</p>
-            <p className="mt-1 text-[13px] font-semibold text-[#202b29]">
+            <p className="text-[11px] text-muted">Latency target</p>
+            <p className="mt-1 font-mono text-[13px] font-semibold text-ink">
               p95 ≤ {formatLatency(CHALLENGE_MAX_P95_MS)}
             </p>
           </div>
-          <div className="border-l border-[#d8d4c9] pl-3">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-[#65706b]">Error budget</p>
-            <p className="mt-1 text-[13px] font-semibold text-[#202b29]">
+          <div className="border-l border-rule pl-3">
+            <p className="text-[11px] text-muted">Error budget</p>
+            <p className="mt-1 font-mono text-[13px] font-semibold text-ink">
               ≤ {formatPercent(CHALLENGE_MAX_ERROR_RATE)}
             </p>
           </div>
@@ -291,13 +284,11 @@ export default function ChallengePanel({
             </div>
 
             {attempt > 1 && baseline && (
-              <div className="mt-4 border-t border-[#d8d4c9] pt-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#65706b]">
-                  Attempt comparison
-                </p>
-                <p className="mt-2 text-[12px] tabular-nums text-[#4f5e57]">
+              <div className="mt-4 border-t border-rule pt-3">
+                <p className="text-[11px] text-muted">Attempt comparison</p>
+                <p className="mt-2 font-mono text-[12px] tabular-nums text-ink">
                   p95 {formatLatency(baseline.p95Latency)} → {formatLatency(result.p95Latency)}
-                  <span className="mx-1.5 text-[#9ca39b]">/</span>
+                  <span className="mx-1.5 text-faint">/</span>
                   errors {formatPercent(baseline.errorRate)} → {formatPercent(result.errorRate)}
                 </p>
               </div>
@@ -314,7 +305,7 @@ export default function ChallengePanel({
                 <button
                   type="button"
                   onClick={onScaleBottleneck}
-                  className="min-h-11 rounded-md border border-[#9a6a16]/35 bg-[#9a6a16]/[0.07] px-2.5 py-2.5 text-[12px] font-semibold text-[#80540e] transition-colors hover:bg-[#9a6a16]/[0.12] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a6a16]"
+                  className="min-h-11 rounded-[3px] border border-warning/40 bg-warning/[0.07] px-2.5 py-2.5 text-[12px] font-semibold text-warning-ink transition-colors hover:bg-warning/[0.12] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-warning"
                 >
                   Scale bottleneck
                 </button>
@@ -322,24 +313,24 @@ export default function ChallengePanel({
               <button
                 type="button"
                 onClick={onStart}
-                className="min-h-11 rounded-md bg-[#263a36] px-2.5 py-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#1e302c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#267a68]"
+                className="min-h-11 rounded-[3px] bg-ink px-2.5 py-2.5 text-[12px] font-semibold text-surface transition-colors hover:bg-[#243642] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-live"
               >
                 Run again
               </button>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 divide-x divide-[#d8d4c9] border-y border-[#d8d4c9]">
+            <div className="mt-4 grid grid-cols-3 divide-x divide-rule border-y border-rule">
               <button
                 type="button"
                 onClick={onCopyLink}
-                className="min-h-10 px-1 py-2 text-[11px] font-medium text-[#4f5e57] transition-colors hover:bg-[#efede4] focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#267a68]"
+                className="min-h-10 px-1 py-2 text-[11px] font-medium text-muted transition-colors hover:bg-paper hover:text-ink focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-live"
               >
                 Copy link
               </button>
               <button
                 type="button"
                 onClick={onDownloadCard}
-                className="min-h-10 px-1 py-2 text-[11px] font-medium text-[#4f5e57] transition-colors hover:bg-[#efede4] focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#267a68]"
+                className="min-h-10 px-1 py-2 text-[11px] font-medium text-muted transition-colors hover:bg-paper hover:text-ink focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-live"
               >
                 Download card
               </button>
@@ -348,12 +339,12 @@ export default function ChallengePanel({
                   href={xShareHref}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="min-h-10 px-1 py-2 text-center text-[11px] font-semibold text-[#176454] transition-colors hover:bg-[#efede4] focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#267a68]"
+                  className="min-h-10 px-1 py-2 text-center text-[11px] font-semibold text-live-ink transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-live"
                 >
                   Share on X
                 </a>
               ) : (
-                <span className="px-1 py-2 text-center text-[11px] text-[#899089]">
+                <span className="px-1 py-2 text-center text-[11px] text-faint">
                   Share on X
                 </span>
               )}
@@ -365,14 +356,14 @@ export default function ChallengePanel({
           <button
             type="button"
             onClick={onCopyLink}
-            className="mt-2 min-h-10 w-full rounded-md px-3 py-2 text-[12px] font-medium text-[#65706b] transition-colors hover:bg-[#efede4] hover:text-[#202b29] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#267a68]"
+            className="mt-2 min-h-10 w-full rounded-[3px] px-3 py-2 text-[12px] font-medium text-muted transition-colors hover:bg-paper hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-live"
           >
             Copy challenge link
           </button>
         )}
 
         {shareNotice && (
-          <p className="mt-3 text-center text-[12px] text-[#176454]" aria-live="polite">
+          <p className="mt-3 text-center text-[12px] text-live-ink" aria-live="polite">
             {shareNotice}
           </p>
         )}

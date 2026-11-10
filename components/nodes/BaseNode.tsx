@@ -6,13 +6,14 @@ import { COMPONENT_META, SimNode, useSimulationStore } from '@/lib/store';
 import { injectOutage } from '@/lib/simulationClient';
 import { formatLatency, formatPercent, formatRate } from '@/lib/format';
 import { ComponentConfig } from '@/types';
+import ComponentIcon from './ComponentIcon';
 
 function statusColor(utilization: number, errors: number, down = false): string {
-  if (down) return '#fb7185';
-  if (errors > 0) return '#fb7185';
-  if (utilization > 0.9) return '#fb7185';
-  if (utilization > 0.7) return '#fbbf24';
-  return '#34d399';
+  if (down) return 'var(--alarm)';
+  if (errors > 0) return 'var(--alarm)';
+  if (utilization > 0.9) return 'var(--alarm)';
+  if (utilization > 0.7) return 'var(--warning)';
+  return 'var(--live)';
 }
 
 function NumberField({
@@ -34,13 +35,15 @@ function NumberField({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#65706b]">
-        {label}
-      </span>
-      <span className="flex min-h-8 items-center gap-1 rounded border border-[#d8d4c9] bg-white/70 px-2 focus-within:border-[#267a68]">
+      <span className="text-[10px] text-muted">{label}</span>
+      <span className="flex min-h-8 items-center gap-1 rounded-[2px] border border-control bg-surface px-2 focus-within:border-live focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-live">
         <input
           type="number"
-          className="nodrag w-full min-w-0 bg-transparent py-1 text-[12px] font-medium text-[#202b29] outline-none"
+          name={label.toLowerCase().replace(/\s+/g, '-')}
+          inputMode="decimal"
+          autoComplete="off"
+          spellCheck={false}
+          className="nodrag w-full min-w-0 bg-transparent py-1 font-mono text-[12px] font-medium text-ink outline-none"
           value={Number.isFinite(value) ? value : 0}
           step={step}
           min={min}
@@ -50,7 +53,7 @@ function NumberField({
             onChange(Number.isFinite(next) ? next : 0);
           }}
         />
-        <span className="shrink-0 text-[10px] text-[#65706b]">{suffix}</span>
+        <span className="shrink-0 font-mono text-[10px] text-faint">{suffix}</span>
       </span>
     </label>
   );
@@ -59,16 +62,18 @@ function NumberField({
 function Metric({
   label,
   value,
-  tone = 'text-[#303b37]',
+  tone = 'text-ink',
 }: {
   label: string;
   value: string;
   tone?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-1 border-t border-[#e4e0d6] py-1.5">
-      <span className="text-[10px] uppercase tracking-[0.08em] text-[#65706b]">{label}</span>
-      <span className={`text-[11px] font-semibold tabular-nums ${tone}`}>{value}</span>
+    <div className="flex items-baseline justify-between gap-1 border-t border-rule py-1.5">
+      <span className="text-[10px] text-muted">{label}</span>
+      <span className={`font-mono text-[11px] font-semibold tabular-nums ${tone}`}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -156,21 +161,26 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
 
   return (
     <div
-      className={`sim-node-enter w-[260px] rounded-md border bg-[#fbfaf5] shadow-[0_8px_24px_rgba(32,43,41,0.12)] transition-shadow ${
-        selected ? 'ring-2 ring-[#267a68]/70' : ''
+      className={`sim-node relative w-[260px] transition-shadow ${
+        selected ? 'sim-node-selected' : ''
       }`}
-      style={{ borderColor: `${meta.color}55` }}
     >
-      <div
-        className="flex items-center gap-2 rounded-t-md border-b border-[#e4e0d6] px-3 py-2.5"
-        style={{ background: `linear-gradient(90deg, ${meta.color}16, transparent)` }}
-      >
-        <span className="h-2 w-2 rounded-full" style={{ background: meta.color }} />
-        <span className="min-w-0 truncate text-[12px] font-semibold tracking-[0.02em] text-[#202b29]">
+      <div className="flex items-center gap-2 rounded-t-[2px] border-b border-rule bg-paper px-3 py-2">
+        <span
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-[2px] border bg-surface"
+          style={{ borderColor: `${meta.color}66`, color: meta.color }}
+          aria-hidden="true"
+        >
+          <ComponentIcon type={component.type} size={15} />
+        </span>
+        <span
+          className="min-w-0 flex-1 truncate text-[12px] font-semibold tracking-[0.01em] text-ink"
+          title={component.name}
+        >
           {component.name}
         </span>
         {metrics?.down ? (
-          <span className="ml-auto animate-pulse rounded bg-[#b63e35]/10 px-1.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#9c3029]">
+          <span className="animate-pulse rounded-[2px] bg-alarm/10 px-1.5 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.06em] text-alarm-ink">
             Down
           </span>
         ) : (
@@ -178,17 +188,17 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
             type="button"
             aria-label="Inject a 5 second outage"
             onClick={() => injectOutage(id, 5000)}
-            className="nodrag ml-auto min-h-7 rounded border border-[#b63e35]/30 px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[#9c3029] transition-colors hover:bg-[#b63e35]/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b63e35]"
+            className="nodrag min-h-8 rounded-[2px] border border-alarm/30 px-2 font-mono text-[9px] font-semibold tracking-[0.02em] text-alarm-ink transition-colors hover:bg-alarm/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-alarm"
             title="Inject a 5 second outage"
           >
             Kill 5s
           </button>
         )}
         <span
-          className="ml-2 h-2 w-2 rounded-full"
-          style={{ background: status, color: status }}
+          className="ml-1 h-2 w-2 shrink-0 rounded-[1px]"
+          style={{ background: status }}
           title={`Utilization ${formatPercent(utilization)}`}
-          aria-label={`Utilization ${formatPercent(utilization)}`}
+          aria-hidden="true"
         />
       </div>
 
@@ -201,26 +211,28 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
         <Metric
           label="errors"
           value={`${formatRate(metrics?.errors ?? 0)}/s`}
-          tone={metrics && metrics.errors > 0 ? 'text-[#b63e35]' : 'text-[#303b37]'}
+          tone={metrics && metrics.errors > 0 ? 'text-alarm' : 'text-ink'}
         />
       </div>
 
       {!isGenerator ? (
         <div className="px-3 pt-2.5">
-          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.08em] text-[#65706b]">
+          <div className="flex items-baseline justify-between text-[10px] text-muted">
             <span>Utilization</span>
-            <span className="tabular-nums">{formatPercent(utilization)}</span>
+            <span className="font-mono tabular-nums text-ink">
+              {formatPercent(utilization)}
+            </span>
           </div>
-          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e4e0d6]">
+          <div className="mt-1.5 h-1 overflow-hidden rounded-[1px] bg-rule">
             <div
-              className="sim-utilization-fill h-full rounded-full transition-[width] duration-500"
+              className="sim-utilization-fill h-full rounded-[1px]"
               style={{ width: `${Math.min(100, utilization * 100)}%`, background: status }}
             />
           </div>
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between px-3 pb-3 pt-2 text-[10px] tabular-nums text-[#65706b]">
+      <div className="flex items-center justify-between px-3 pb-3 pt-2 font-mono text-[10px] tabular-nums text-muted">
         {isGenerator ? (
           <span>dropped {formatRate(metrics?.dropped ?? 0)}</span>
         ) : (
@@ -232,17 +244,9 @@ export default function BaseNode({ id, data, selected }: NodeProps<SimNode>) {
       </div>
 
       {!isGenerator ? (
-        <Handle
-          type="target"
-          position={Position.Top}
-          style={{ width: 10, height: 10, background: meta.color, border: '2px solid #fbfaf5' }}
-        />
+        <Handle type="target" position={Position.Top} />
       ) : null}
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        style={{ width: 10, height: 10, background: meta.color, border: '2px solid #fbfaf5' }}
-      />
+      <Handle type="source" position={Position.Bottom} />
     </div>
   );
 }

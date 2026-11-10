@@ -3,6 +3,7 @@
 import { useReactFlow } from '@xyflow/react';
 import { COMPONENT_META, useSimulationStore } from '@/lib/store';
 import type { ComponentType } from '@/types';
+import ComponentIcon from './nodes/ComponentIcon';
 
 const TYPES: ComponentType[] = [
   'traffic-generator',
@@ -31,34 +32,27 @@ export default function NodePalette() {
   };
 
   return (
-    <aside className="sim-sidebar-enter z-20 flex h-[104px] w-full shrink-0 flex-col border-b border-[#D8D4C9] bg-[#F4F1E8] text-[#202B29] md:h-full md:max-h-none md:w-[236px] md:border-b-0 md:border-r">
-      <header className="flex h-[43px] shrink-0 items-center justify-between border-b border-[#D8D4C9] px-3.5 md:h-auto md:px-5 md:py-4">
+    <aside className="z-20 flex h-full w-full shrink-0 flex-col border-b border-rule bg-paper text-ink lg:col-start-1 lg:row-span-2 lg:border-b-0 lg:border-r xl:row-span-1">
+      <header className="flex h-[44px] shrink-0 items-center justify-between border-b border-rule px-3.5 lg:h-auto lg:px-5 lg:py-5">
         <div className="min-w-0">
-          <p className="hidden font-mono text-[11px] uppercase tracking-[0.12em] text-[#65706B] md:block">
-            Systems / 01
-          </p>
-          <h1 className="text-[15px] font-semibold tracking-tight text-[#202B29]">
+          <h1 className="text-[15px] font-semibold tracking-tight text-ink">
             System Simulator
           </h1>
-          <p className="hidden text-[13px] text-[#65706B] md:block">
+          <p className="hidden text-[12px] text-muted lg:block">
             Architecture workbench
           </p>
         </div>
-        <span className="shrink-0 border border-[#D8D4C9] px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-[#65706B]">
-          Draft
-        </span>
+        <span className="sim-designator hidden lg:inline-flex">SIM</span>
       </header>
 
-      <div className="h-[60px] shrink-0 px-2 py-1 md:h-auto md:min-h-0 md:flex-1 md:overflow-x-hidden md:overflow-y-auto md:px-4 md:py-5">
-        <div className="mb-2 hidden items-center justify-between px-1 md:flex md:mb-3">
-          <h2 className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#202B29]">
-            Component index
-          </h2>
-          <span className="text-[11px] text-[#65706B]">Drag or select</span>
+      <div className="h-[60px] shrink-0 px-2 py-1 lg:h-auto lg:min-h-0 lg:flex-1 lg:overflow-x-hidden lg:overflow-y-auto lg:px-4 lg:py-5">
+        <div className="mb-2 hidden items-baseline justify-between px-1 lg:mb-3 lg:flex">
+          <h2 className="text-[12px] font-medium text-ink">Components</h2>
+          <span className="text-[11px] text-muted">Drag to place</span>
         </div>
 
-        <div className="grid h-full min-w-0 grid-cols-5 gap-1 md:h-auto md:grid-cols-1 md:gap-0">
-          {TYPES.map((type, index) => {
+        <div className="grid h-full min-w-0 grid-cols-5 gap-1 lg:h-auto lg:grid-cols-1 lg:gap-0">
+          {TYPES.map((type) => {
             const meta = COMPONENT_META[type];
             return (
               <button
@@ -71,26 +65,20 @@ export default function NodePalette() {
                   event.dataTransfer.effectAllowed = 'move';
                 }}
                 onClick={() => addAtCenter(type)}
-                className="group flex h-full min-h-0 min-w-0 cursor-grab flex-col items-center justify-center gap-0.5 border-b border-l-[3px] border-[#D8D4C9] px-0.5 text-center transition-colors hover:bg-[#FBFAF5] active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#267A68] md:h-auto md:min-h-[68px] md:flex-row md:justify-start md:gap-3 md:px-3 md:py-3 md:text-left"
-                style={{ borderLeftColor: meta.color }}
+                className="group flex h-full min-h-0 min-w-0 cursor-grab flex-col items-center justify-center gap-1 rounded-[2px] border-b border-rule px-0.5 text-center transition-colors hover:bg-surface active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-live lg:h-auto lg:min-h-[62px] lg:flex-row lg:justify-start lg:gap-3 lg:px-2 lg:py-2.5 lg:text-left"
               >
                 <span
-                  className="flex shrink-0 items-center justify-center gap-1.5 md:w-9 md:justify-start"
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-[2px] border bg-surface"
+                  style={{ borderColor: `${meta.color}66`, color: meta.color }}
                   aria-hidden="true"
                 >
-                  <span
-                    className="h-1.5 w-1.5 rounded-full md:h-2 md:w-2"
-                    style={{ backgroundColor: meta.color }}
-                  />
-                  <span className="hidden font-mono text-[11px] tabular-nums text-[#65706B] md:inline">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
+                  <ComponentIcon type={type} size={17} />
                 </span>
-                <span className="min-w-0 w-full md:flex-1">
-                  <span className="block whitespace-normal break-words text-[9px] font-medium leading-[1.1] text-[#202B29] md:truncate md:text-[13px] md:leading-normal">
+                <span className="min-w-0 w-full lg:flex-1">
+                  <span className="block whitespace-normal break-words text-[9px] font-medium leading-[1.1] text-ink lg:truncate lg:text-[12.5px] lg:leading-normal">
                     {meta.label}
                   </span>
-                  <span className="hidden truncate text-[13px] text-[#65706B] md:block">
+                  <span className="hidden truncate text-[11.5px] text-muted lg:block">
                     {meta.description}
                   </span>
                 </span>
@@ -99,33 +87,32 @@ export default function NodePalette() {
           })}
         </div>
 
-        <div className="mt-7 hidden border-t border-[#D8D4C9] pt-4 md:block">
-          <p className="text-[13px] font-semibold text-[#202B29]">
-            Build the request path
-          </p>
-          <ol className="mt-3 space-y-2 text-[13px] leading-relaxed text-[#65706B]">
-            <li className="flex gap-2">
-              <span className="font-mono text-[11px] text-[#65706B]">01</span>
+        <div className="mt-6 hidden border-t border-rule pt-4 lg:block">
+          <p className="text-[12px] font-medium text-ink">Build the request path</p>
+          <ol className="mt-2.5 space-y-2 text-[12px] leading-relaxed text-muted">
+            <li className="flex gap-2.5">
+              <span className="font-mono text-[10px] leading-5 text-faint">1</span>
               Drag components onto the canvas.
             </li>
-            <li className="flex gap-2">
-              <span className="font-mono text-[11px] text-[#65706B]">02</span>
+            <li className="flex gap-2.5">
+              <span className="font-mono text-[10px] leading-5 text-faint">2</span>
               Connect outputs to inputs.
             </li>
-            <li className="flex gap-2">
-              <span className="font-mono text-[11px] text-[#65706B]">03</span>
+            <li className="flex gap-2.5">
+              <span className="font-mono text-[10px] leading-5 text-faint">3</span>
               Tune capacity and run a spike.
             </li>
           </ol>
-          <p className="mt-3 border-t border-[#D8D4C9] pt-3 text-[13px] leading-relaxed text-[#65706B]">
-            Queues grow above 70% utilization. When demand exceeds capacity, latency rises fast.
+          <p className="mt-3 border-t border-rule pt-3 text-[12px] leading-relaxed text-muted">
+            Queues grow above 70% utilization. When demand exceeds capacity, latency
+            rises fast.
           </p>
         </div>
       </div>
 
-      <footer className="hidden items-center justify-between border-t border-[#D8D4C9] px-5 py-3 text-[12px] text-[#65706B] md:flex">
+      <footer className="hidden items-center justify-between border-t border-rule px-5 py-3 text-[11px] text-muted lg:flex">
         <span>Nodes on canvas</span>
-        <span className="font-mono tabular-nums text-[#202B29]">
+        <span className="font-mono tabular-nums text-ink">
           {String(nodeCount).padStart(2, '0')}
         </span>
       </footer>

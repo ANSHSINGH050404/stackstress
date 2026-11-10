@@ -39,3 +39,7 @@ npx tsc --noEmit
 - `components/MetricsPanel.tsx` — aggregate throughput, p95 latency, and error-rate charts.
 
 The simulation currently runs in-process behind `simulationClient.ts`. The engine is pure TypeScript, so the transport can move to a Web Worker later without changing the UI or store.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

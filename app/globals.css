@@ -1,41 +1,66 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f4f1e8;
-  --foreground: #202b29;
-  --paper: #f4f1e8;
-  --surface: #fbfaf5;
-  --ink: #202b29;
-  --muted: #65706b;
-  --rule: #d8d4c9;
-  --grid: #e7e3d9;
-  --forest: #263a36;
-  --live: #267a68;
-  --warning: #9a6a16;
-  --danger: #b63e35;
+  --paper: #e8eef2;
+  --surface: #f8fbfc;
+  --ink: #15222c;
+  --muted: #4e5c66;
+  --faint: #5f6d77;
+  --rule: #c6d2da;
+  --rule-strong: #8b9aa4;
+  --control: #7b8a94;
+  --grid: #d3dee5;
+  --live: #0f7a63;
+  --live-ink: #0a5a49;
+  --warning: #a9680f;
+  --warning-ink: #7b4b09;
+  --alarm: #bc3a2b;
+  --alarm-ink: #8d2a20;
+  --data: #2f6f95;
   color-scheme: light;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-control: var(--control);
+  --color-grid: var(--grid);
+  --color-live: var(--live);
+  --color-live-ink: var(--live-ink);
+  --color-warning: var(--warning);
+  --color-warning-ink: var(--warning-ink);
+  --color-alarm: var(--alarm);
+  --color-alarm-ink: var(--alarm-ink);
+  --color-data: var(--data);
+  --font-sans: var(--font-overpass);
+  --font-mono: var(--font-overpass-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-overpass), Arial, Helvetica, sans-serif;
 }
 
+/* Drafting sheet: fine grid with a major line every five cells. */
 .sim-canvas-surface {
   background-color: var(--paper);
   background-image:
-    linear-gradient(to right, rgb(83 94 84 / 5%) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(83 94 84 / 5%) 1px, transparent 1px);
+    linear-gradient(to right, rgb(21 34 44 / 4%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(21 34 44 / 4%) 1px, transparent 1px),
+    linear-gradient(to right, rgb(21 34 44 / 8%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(21 34 44 / 8%) 1px, transparent 1px);
   background-position: center center;
-  background-size: 24px 24px;
+  background-size:
+    24px 24px,
+    24px 24px,
+    120px 120px,
+    120px 120px;
 }
 
 .sim-workspace-toolbar {
@@ -48,6 +73,44 @@ body {
   touch-action: manipulation;
 }
 
+/* Reference designator, like a part code on a schematic. */
+.sim-designator {
+  display: inline-flex;
+  min-width: 2rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rule-strong);
+  border-radius: 2px;
+  padding-inline: 0.375rem;
+  font-family: var(--font-overpass-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+/* A node reads as a component card pinned to the drawing. */
+.sim-node {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  box-shadow: 3px 3px 0 rgb(21 34 44 / 7%);
+}
+
+.sim-node-selected {
+  outline: 1px solid var(--live);
+  outline-offset: 3px;
+}
+
+.sim-node .react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--surface);
+  border-radius: 1px;
+  background: var(--ink);
+}
+
 .sim-control-button:focus-visible,
 .sim-profile-button:focus-visible {
   outline: 2px solid var(--live);
@@ -57,9 +120,9 @@ body {
 .react-flow__controls {
   overflow: hidden;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: 3px;
   background: var(--surface);
-  box-shadow: 0 4px 14px rgb(32 43 41 / 10%);
+  box-shadow: 2px 2px 0 rgb(21 34 44 / 7%);
 }
 
 .react-flow__controls-button {
@@ -69,10 +132,10 @@ body {
 }
 
 .react-flow__controls-button:hover {
-  background: #efede4;
+  background: var(--paper);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .react-flow__controls-button {
     width: 44px;
     height: 44px;
@@ -86,13 +149,13 @@ body {
 .react-flow__minimap {
   overflow: hidden;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: 3px;
   background: var(--surface);
-  box-shadow: 0 4px 14px rgb(32 43 41 / 10%);
+  box-shadow: 2px 2px 0 rgb(21 34 44 / 7%);
 }
 
 .react-flow__attribution {
-  background: rgb(251 250 245 / 85%);
+  background: rgb(248 251 252 / 85%);
 }
 
 button,
@@ -100,98 +163,26 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-.sim-sidebar-enter {
-  animation: sim-slide-in 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
-}
-
-.sim-inspector-enter {
-  animation: sim-slide-in-right 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
-}
-
-.sim-toolbar-enter {
-  animation: sim-rise-in 360ms 60ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
-}
-
-.sim-panel-enter {
-  animation: sim-rise-in 420ms 120ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
-}
-
-.sim-node-enter {
-  animation: sim-node-in 360ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
-}
-
 .sim-progress-fill {
   transform-origin: left center;
   transition: transform 350ms ease-out;
 }
 
-@keyframes sim-slide-in {
-  from {
-    opacity: 0;
-    transform: translateX(-8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes sim-slide-in-right {
-  from {
-    opacity: 0;
-    transform: translateX(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes sim-rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes sim-node-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+.sim-utilization-fill {
+  transition: width 500ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sim-sidebar-enter,
-  .sim-inspector-enter,
-  .sim-toolbar-enter,
-  .sim-panel-enter,
-  .sim-node-enter,
   .animate-pulse {
     animation: none;
   }
 
-  .sim-progress-fill {
+  .sim-progress-fill,
+  .sim-utilization-fill {
     transition: none;
   }
 
   .react-flow__edge.animated path {
     animation: none !important;
-  }
-
-  .sim-utilization-fill {
-    transition: none;
   }
 }

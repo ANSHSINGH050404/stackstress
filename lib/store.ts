@@ -44,27 +44,27 @@ export const COMPONENT_META: Record<
   'traffic-generator': {
     label: 'Traffic Generator',
     description: 'Inject synthetic load',
-    color: '#38bdf8',
+    color: '#2f6f95',
   },
   'load-balancer': {
     label: 'Load Balancer',
     description: 'Spread requests across targets',
-    color: '#a78bfa',
+    color: '#4f5d8a',
   },
   service: {
     label: 'Service',
     description: 'Stateless request processing',
-    color: '#34d399',
+    color: '#0f7a63',
   },
   cache: {
     label: 'Cache',
     description: 'Low-latency read path',
-    color: '#fbbf24',
+    color: '#a9680f',
   },
   database: {
     label: 'Database',
     description: 'Stateful storage bottleneck',
-    color: '#fb7185',
+    color: '#7d4f70',
   },
 };
 
@@ -111,8 +111,8 @@ export const COMPONENT_DEFAULTS: Record<
 
 const EDGE_STYLE = {
   type: 'smoothstep' as const,
-  style: { stroke: '#334155', strokeWidth: 1.5 },
-  markerEnd: { type: MarkerType.ArrowClosed, color: '#475569' },
+  style: { stroke: '#87949d', strokeWidth: 1.5 },
+  markerEnd: { type: MarkerType.ArrowClosed, color: '#87949d' },
 };
 
 function makeComponent(
