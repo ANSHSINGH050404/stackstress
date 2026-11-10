@@ -18,6 +18,7 @@ import {
   ComponentType,
   LoadProfile,
   NodeMetrics,
+  RequestTrace,
   SimulationSummary,
   SimulationUpdate,
 } from '../types';
@@ -186,6 +187,7 @@ interface SimulationStore {
   history: HistoryPoint[];
   summary: SimulationSummary | null;
   metricsById: Record<string, NodeMetrics>;
+  requestTraces: RequestTrace[];
   running: boolean;
   loadProfile: LoadProfile;
   sharedScenarioLoaded: boolean;
@@ -202,6 +204,7 @@ interface SimulationStore {
 }
 
 const HISTORY_LIMIT = 120;
+const REQUEST_TRACE_HISTORY_LIMIT = 2048;
 
 export const useSimulationStore = create<SimulationStore>((set) => ({
   nodes: initialNodes,
@@ -209,6 +212,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   history: [],
   summary: null,
   metricsById: {},
+  requestTraces: [],
   running: false,
   loadProfile: 'steady',
   sharedScenarioLoaded: false,
@@ -270,6 +274,12 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
     set((state) => ({
       metricsById: update.nodes,
       summary: update.summary,
+      requestTraces:
+        update.requestTraces.length === 0
+          ? state.requestTraces
+          : [...state.requestTraces, ...update.requestTraces].slice(
+              -REQUEST_TRACE_HISTORY_LIMIT
+            ),
       history: [
         ...state.history.slice(-(HISTORY_LIMIT - 1)),
         {
@@ -303,6 +313,7 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
         history: [],
         summary: null,
         metricsById: {},
+        requestTraces: [],
       };
     }),
 
@@ -311,5 +322,6 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       metricsById: {},
       history: [],
       summary: null,
+      requestTraces: [],
     }),
 }));

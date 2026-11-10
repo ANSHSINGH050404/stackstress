@@ -3,12 +3,21 @@ import type {
   GraphPayload,
   LoadProfile,
   NodeMetrics,
+  RequestTrace,
+  RequestTraceHop,
+  RequestTraceOutcome,
+  RequestTraceReason,
+  SimulationEngineOptions,
   SimulationSummary,
   SimulationUpdate,
 } from '../types';
 
 /** Requests are dropped after this many hops to stop cycles from running forever. */
 const MAX_HOPS = 32;
+/** Keep tracing overhead bounded even when the simulated request rate is high. */
+const TRACE_SAMPLE_INTERVAL = 4;
+const MAX_TRACKED_TRACES = 1024;
+const MAX_PENDING_TRACES = 512;
 /** Cap the number of latency samples kept per interval. */
 const MAX_SAMPLES = 5000;
 /** Safety valve so a pathological graph cannot lock the simulation loop. */
@@ -25,6 +34,24 @@ interface Request {
   hops: number;
   enqueuedAt: number;
   serviceStartedAt: number;
+  trace?: RequestTraceDraft;
+}
+
+interface RequestTraceHopDraft {
+  componentId: string;
+  componentName: string;
+  arrivedAt: number;
+  serviceStartedAt: number | null;
+  queueWaitMs: number;
+}
+
+interface RequestTraceDraft {
+  sourceGeneratorId: string;
+  sourceGeneratorName: string;
+  requestId: number;
+  startedAt: number;
+  hops: RequestTraceHop[];
+  currentHop: RequestTraceHopDraft | null;
 }
 
 interface SimEvent {
@@ -86,6 +113,12 @@ class EventHeap {
     return this.items[0];
   }
 
+  forEachRequestAtNode(nodeId: string, visit: (request: Request) => void): void {
+    for (const event of this.items) {
+      if (event.nodeId === nodeId && event.request) visit(event.request);
+    }
+  }
+
   push(event: SimEvent): void {
     const items = this.items;
     items.push(event);
@@ -129,6 +162,19 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+let fallbackSeed = Date.now() >>> 0;
+
+function createRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 0x1_0000_0000;
+  };
+}
+
 function percentile(samples: number[], p: number): number {
   if (samples.length === 0) return 0;
   const sorted = [...samples].sort((a, b) => a - b);
@@ -161,6 +207,10 @@ export class SimulationEngine {
   private components = new Map<string, NodeRuntime>();
   private edges = new Map<string, string[]>();
   private heap = new EventHeap();
+  private random = createRandom(0);
+  private captureTraces = false;
+  private trackedTraceCount = 0;
+  private pendingTraces: RequestTrace[] = [];
   private seq = 0;
   private requestSeq = 0;
   private time = 0;
@@ -180,7 +230,10 @@ export class SimulationEngine {
     dropped: 0,
   };
 
-  constructor(graph: GraphPayload) {
+  constructor(graph: GraphPayload, options: SimulationEngineOptions = {}) {
+    const seed = options.seed ?? fallbackSeed++;
+    this.random = createRandom(seed);
+    this.captureTraces = options.captureTraces ?? false;
     this.updateGraph(graph);
   }
 
@@ -193,7 +246,10 @@ export class SimulationEngine {
     }
 
     for (const id of [...this.components.keys()]) {
-      if (!next.has(id)) this.components.delete(id);
+      if (!next.has(id)) {
+        this.discardTracesForNode(id, this.components.get(id));
+        this.components.delete(id);
+      }
     }
 
     for (const [id, config] of next) {
@@ -208,6 +264,7 @@ export class SimulationEngine {
         continue;
       }
 
+      if (existing) this.discardTracesForNode(id, existing);
       const runtime: NodeRuntime = {
         config,
         queue: [],
@@ -250,9 +307,23 @@ export class SimulationEngine {
 
     runtime.downUntil = Math.max(runtime.downUntil, this.time + Math.max(100, durationMs));
     while (runtime.queue.length > 0) {
-      runtime.queue.pop();
+      const request = runtime.queue.pop();
+      if (request) {
+        this.finishTraceHop(
+          request,
+          'dropped',
+          'outage',
+          this.time,
+          runtime.config.latency
+        );
+        this.finalizeTrace(request, 'dropped', 'outage', this.time);
+      }
       this.recordDrop(runtime);
     }
+  }
+
+  public stopTraceCapture(): void {
+    this.captureTraces = false;
   }
 
   /** Advance simulated time and return a metrics snapshot for the interval. */
@@ -276,7 +347,10 @@ export class SimulationEngine {
 
   private handleEvent(event: SimEvent): void {
     const runtime = this.components.get(event.nodeId);
-    if (!runtime) return;
+    if (!runtime) {
+      if (event.request) this.discardTrace(event.request);
+      return;
+    }
 
     switch (event.kind) {
       case 'generator':
@@ -306,12 +380,6 @@ export class SimulationEngine {
     runtime.totalOut += 1;
     this.summaryInterval.generated += 1;
 
-    const targets = this.edges.get(runtime.config.id);
-    if (!targets || targets.length === 0) {
-      this.recordDrop(runtime);
-      return;
-    }
-
     const request: Request = {
       id: this.requestSeq++,
       startedAt: event.time,
@@ -320,6 +388,14 @@ export class SimulationEngine {
       enqueuedAt: event.time,
       serviceStartedAt: event.time,
     };
+    this.sampleTrace(request, runtime.config);
+
+    const targets = this.edges.get(runtime.config.id);
+    if (!targets || targets.length === 0) {
+      this.finalizeTrace(request, 'dropped', 'no-target', event.time);
+      this.recordDrop(runtime);
+      return;
+    }
 
     this.heap.push({
       time: event.time,
@@ -331,18 +407,39 @@ export class SimulationEngine {
   }
 
   private handleArrival(runtime: NodeRuntime, event: SimEvent): void {
-    if (!event.request || runtime.config.type === 'traffic-generator') return;
+    if (!event.request) return;
+    if (runtime.config.type === 'traffic-generator') {
+      this.discardTrace(event.request);
+      return;
+    }
 
+    this.startTraceHop(event.request, runtime, event.time);
     runtime.interval.in += 1;
     runtime.totalIn += 1;
 
     if (this.isDown(runtime)) {
+      this.finishTraceHop(
+        event.request,
+        'dropped',
+        'outage',
+        event.time,
+        runtime.config.latency
+      );
+      this.finalizeTrace(event.request, 'dropped', 'outage', event.time);
       this.recordDrop(runtime);
       return;
     }
 
     // A busy server with a full waiting room drops the request.
     if (runtime.busy && runtime.queue.length >= runtime.config.queueCapacity) {
+      this.finishTraceHop(
+        event.request,
+        'dropped',
+        'queue-full',
+        event.time,
+        runtime.config.latency
+      );
+      this.finalizeTrace(event.request, 'dropped', 'queue-full', event.time);
       this.recordDrop(runtime);
       return;
     }
@@ -363,8 +460,20 @@ export class SimulationEngine {
     const residency = event.time - request.enqueuedAt + runtime.config.latency;
     pushSample(runtime.interval.latencySamples, residency);
 
-    const failed = request.hops >= MAX_HOPS || Math.random() < runtime.config.failureRate;
+    const hitHopLimit = request.hops >= MAX_HOPS;
+    const componentFailed =
+      !hitHopLimit && this.random() < runtime.config.failureRate;
+    const failed = hitHopLimit || componentFailed;
+    const failureReason: RequestTraceReason | null = hitHopLimit
+      ? 'hop-limit'
+      : componentFailed
+        ? 'component-failure'
+        : null;
+    request.overheadMs += runtime.config.latency;
+
     if (failed) {
+      this.finishTraceHop(request, 'failed', failureReason, event.time, runtime.config.latency);
+      this.finalizeTrace(request, 'failed', failureReason, event.time);
       runtime.interval.errors += 1;
       runtime.totalErrors += 1;
       this.summaryInterval.errors += 1;
@@ -376,11 +485,10 @@ export class SimulationEngine {
     runtime.interval.out += 1;
     runtime.totalOut += 1;
 
-    const overheadMs = request.overheadMs + runtime.config.latency;
     const targets = this.edges.get(runtime.config.id);
 
     if (targets && targets.length > 0) {
-      request.overheadMs = overheadMs;
+      this.finishTraceHop(request, 'completed', null, event.time, runtime.config.latency);
       this.heap.push({
         time: event.time,
         seq: this.seq++,
@@ -390,10 +498,12 @@ export class SimulationEngine {
       });
     } else {
       // Terminal node: record the end-to-end latency.
-      const endToEnd = event.time - request.startedAt + overheadMs;
+      const endToEnd = event.time - request.startedAt + request.overheadMs;
       pushSample(this.summaryInterval.e2eSamples, endToEnd);
       this.summaryInterval.completed += 1;
       this.totals.completed += 1;
+      this.finishTraceHop(request, 'completed', null, event.time, runtime.config.latency);
+      this.finalizeTrace(request, 'completed', null, event.time);
     }
 
     this.pump(runtime, event.time);
@@ -407,6 +517,10 @@ export class SimulationEngine {
 
     runtime.busy = true;
     request.serviceStartedAt = now;
+    if (request.trace?.currentHop) {
+      request.trace.currentHop.serviceStartedAt = now;
+      request.trace.currentHop.queueWaitMs = Math.max(0, now - request.trace.currentHop.arrivedAt);
+    }
 
     this.heap.push({
       time: now + this.sampleServiceMs(runtime.config.throughputLimit),
@@ -426,6 +540,107 @@ export class SimulationEngine {
     this.summaryInterval.dropped += 1;
     this.totals.errors += 1;
     this.totals.dropped += 1;
+  }
+
+  private sampleTrace(request: Request, generator: ComponentConfig): void {
+    if (
+      !this.captureTraces ||
+      request.id % TRACE_SAMPLE_INTERVAL !== 0 ||
+      this.trackedTraceCount >= MAX_TRACKED_TRACES
+    ) {
+      return;
+    }
+
+    request.trace = {
+      sourceGeneratorId: generator.id,
+      sourceGeneratorName: generator.name,
+      requestId: request.id,
+      startedAt: request.startedAt,
+      hops: [],
+      currentHop: null,
+    };
+    this.trackedTraceCount += 1;
+  }
+
+  private startTraceHop(request: Request, runtime: NodeRuntime, arrivedAt: number): void {
+    const trace = request.trace;
+    if (!trace) return;
+    trace.currentHop = {
+      componentId: runtime.config.id,
+      componentName: runtime.config.name,
+      arrivedAt,
+      serviceStartedAt: null,
+      queueWaitMs: 0,
+    };
+  }
+
+  private finishTraceHop(
+    request: Request,
+    outcome: RequestTraceOutcome,
+    reason: RequestTraceReason | null,
+    endedAt: number,
+    configuredLatencyMs = 0
+  ): void {
+    const trace = request.trace;
+    const hop = trace?.currentHop;
+    if (!trace || !hop) return;
+
+    const serviceStartedAt = hop.serviceStartedAt;
+    const serviced = serviceStartedAt !== null;
+    const completedHop: RequestTraceHop = {
+      componentId: hop.componentId,
+      componentName: hop.componentName,
+      queueWaitMs: serviced
+        ? hop.queueWaitMs
+        : Math.max(0, endedAt - hop.arrivedAt),
+      serviceTimeMs: serviced ? Math.max(0, endedAt - serviceStartedAt) : 0,
+      configuredLatencyMs,
+      outcome,
+      reason,
+    };
+    trace.hops.push(completedHop);
+    trace.currentHop = null;
+  }
+
+  private finalizeTrace(
+    request: Request,
+    outcome: RequestTraceOutcome,
+    reason: RequestTraceReason | null,
+    terminalAt: number
+  ): void {
+    const trace = request.trace;
+    if (!trace) return;
+
+    if (trace.currentHop) {
+      this.finishTraceHop(request, outcome, reason, terminalAt);
+    }
+    if (this.pendingTraces.length >= MAX_PENDING_TRACES) {
+      this.pendingTraces.splice(0, MAX_PENDING_TRACES / 2);
+    }
+    this.pendingTraces.push({
+      sourceGeneratorId: trace.sourceGeneratorId,
+      sourceGeneratorName: trace.sourceGeneratorName,
+      requestId: trace.requestId,
+      startedAt: trace.startedAt,
+      terminalAt,
+      totalObservedLatencyMs: Math.max(0, terminalAt - request.startedAt) + request.overheadMs,
+      outcome,
+      reason,
+      hops: trace.hops.map((hop) => ({ ...hop })),
+    });
+    request.trace = undefined;
+    this.trackedTraceCount -= 1;
+  }
+
+  private discardTrace(request: Request): void {
+    if (!request.trace) return;
+    request.trace = undefined;
+    this.trackedTraceCount -= 1;
+  }
+
+  private discardTracesForNode(nodeId: string, runtime?: NodeRuntime): void {
+    for (const request of runtime?.queue ?? []) this.discardTrace(request);
+    this.heap.forEachRequestAtNode(nodeId, (request) => this.discardTrace(request));
   }
 
   private scheduleNextGeneration(runtime: NodeRuntime, from = this.time): void {
@@ -462,13 +677,13 @@ export class SimulationEngine {
 
   private interarrivalMs(rps: number): number {
     if (rps <= 0) return Number.POSITIVE_INFINITY;
-    const exponential = -Math.log(1 - Math.random()) * (1000 / rps);
+    const exponential = -Math.log(1 - this.random()) * (1000 / rps);
     return Math.max(MIN_INTERARRIVAL_MS, exponential);
   }
 
   private sampleServiceMs(throughputLimit: number): number {
     const meanMs = 1000 / Math.max(1, throughputLimit);
-    const sample = -Math.log(1 - Math.random()) * meanMs;
+    const sample = -Math.log(1 - this.random()) * meanMs;
     return clamp(sample, 0.1, 60_000);
   }
 
@@ -490,7 +705,7 @@ export class SimulationEngine {
     }
 
     // Break ties randomly so equal-capacity targets share traffic evenly.
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    return candidates[Math.floor(this.random() * candidates.length)];
   }
 
   private snapshot(durationMs: number): SimulationUpdate {
@@ -544,6 +759,11 @@ export class SimulationEngine {
       e2eSamples: [],
     };
 
-    return { time: this.time, nodes, summary };
+    return {
+      time: this.time,
+      nodes,
+      summary,
+      requestTraces: this.pendingTraces.splice(0),
+    };
   }
 }

@@ -7,6 +7,42 @@ export type ComponentType =
 
 export type LoadProfile = 'steady' | 'spike' | 'ramp';
 
+export type RequestTraceOutcome = 'completed' | 'failed' | 'dropped';
+
+export type RequestTraceReason =
+  | 'component-failure'
+  | 'hop-limit'
+  | 'queue-full'
+  | 'outage'
+  | 'no-target';
+
+export interface RequestTraceHop {
+  readonly componentId: string;
+  readonly componentName: string;
+  readonly queueWaitMs: number;
+  readonly serviceTimeMs: number;
+  readonly configuredLatencyMs: number;
+  readonly outcome: RequestTraceOutcome;
+  readonly reason: RequestTraceReason | null;
+}
+
+export interface RequestTrace {
+  readonly sourceGeneratorId: string;
+  readonly sourceGeneratorName: string;
+  readonly requestId: number;
+  readonly startedAt: number;
+  readonly terminalAt: number;
+  readonly totalObservedLatencyMs: number;
+  readonly outcome: RequestTraceOutcome;
+  readonly reason: RequestTraceReason | null;
+  readonly hops: readonly RequestTraceHop[];
+}
+
+export interface SimulationEngineOptions {
+  seed?: number;
+  captureTraces?: boolean;
+}
+
 export interface ComponentConfig {
   id: string;
   type: ComponentType;
@@ -65,6 +101,7 @@ export interface SimulationUpdate {
   time: number;
   nodes: Record<string, NodeMetrics>;
   summary: SimulationSummary;
+  requestTraces: readonly RequestTrace[];
 }
 
 export interface GraphPayload {

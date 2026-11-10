@@ -103,6 +103,12 @@ body {
   outline-offset: 3px;
 }
 
+.sim-node-traced {
+  outline: 2px solid var(--live);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgb(15 122 99 / 12%);
+}
+
 .sim-node .react-flow__handle {
   width: 9px;
   height: 9px;

@@ -1,4 +1,9 @@
-import type { ComponentConfig, NodeMetrics, SimulationSummary } from '@/types';
+import type {
+  ComponentConfig,
+  NodeMetrics,
+  RequestTrace,
+  SimulationSummary,
+} from '@/types';
 import type { HistoryPoint, SimNode } from './store';
 
 export const SPIKE_CHALLENGE_DURATION_MS = 9_000;
@@ -19,6 +24,7 @@ export interface ChallengeResult {
   bottleneckId: string | null;
   bottleneckName: string | null;
   canScaleBottleneck: boolean;
+  representativeTrace: RequestTrace | null;
 }
 
 function average(values: number[]): number {
@@ -58,11 +64,90 @@ function findBottleneck(
   return bottleneck;
 }
 
+function selectSlowestTrace(traces: readonly RequestTrace[]): RequestTrace | null {
+  let slowest: RequestTrace | null = null;
+
+  for (const trace of traces) {
+    if (
+      !slowest ||
+      trace.totalObservedLatencyMs > slowest.totalObservedLatencyMs ||
+      (trace.totalObservedLatencyMs === slowest.totalObservedLatencyMs &&
+        (trace.terminalAt < slowest.terminalAt ||
+          (trace.terminalAt === slowest.terminalAt &&
+            trace.requestId < slowest.requestId)))
+    ) {
+      slowest = trace;
+    }
+  }
+
+  return slowest;
+}
+
+function selectFailedTrace(traces: readonly RequestTrace[]): RequestTrace | null {
+  let selected: RequestTrace | null = null;
+
+  for (const trace of traces) {
+    if (trace.outcome === 'completed') continue;
+    if (
+      !selected ||
+      (trace.outcome === 'failed' && selected.outcome === 'dropped') ||
+      (trace.outcome === selected.outcome &&
+        (trace.totalObservedLatencyMs > selected.totalObservedLatencyMs ||
+          (trace.totalObservedLatencyMs === selected.totalObservedLatencyMs &&
+            (trace.terminalAt < selected.terminalAt ||
+              (trace.terminalAt === selected.terminalAt &&
+                trace.requestId < selected.requestId)))))
+    ) {
+      selected = trace;
+    }
+  }
+
+  return selected;
+}
+
+function selectRepresentativeTrace(
+  traces: readonly RequestTrace[],
+  bottleneckId: string | null,
+  errorBudgetFailed: boolean,
+  latencyTargetFailed: boolean
+): RequestTrace | null {
+  const eligible = traces.filter(
+    (trace) =>
+      trace.terminalAt > SPIKE_WINDOW_START_MS &&
+      trace.terminalAt <= SPIKE_WINDOW_END_MS
+  );
+  if (eligible.length === 0) return null;
+
+  const bottleneckTraces = bottleneckId
+    ? eligible.filter((trace) =>
+        trace.hops.some((hop) => hop.componentId === bottleneckId)
+      )
+    : [];
+
+  if (bottleneckTraces.length > 0) {
+    if (errorBudgetFailed) {
+      return (
+        selectFailedTrace(bottleneckTraces) ??
+        selectSlowestTrace(bottleneckTraces)
+      );
+    }
+    return selectSlowestTrace(bottleneckTraces);
+  }
+
+  if (errorBudgetFailed) {
+    const failedTrace = selectFailedTrace(eligible);
+    if (failedTrace) return failedTrace;
+  }
+
+  return latencyTargetFailed ? selectSlowestTrace(eligible) : null;
+}
+
 export function evaluateSpikeChallenge(
   history: HistoryPoint[],
   metricsById: Record<string, NodeMetrics>,
   nodes: SimNode[],
-  summary: SimulationSummary | null
+  summary: SimulationSummary | null,
+  requestTraces: readonly RequestTrace[] = []
 ): ChallengeResult {
   const spikeSamples = history.filter(
     (point) => point.t > SPIKE_WINDOW_START_MS && point.t <= SPIKE_WINDOW_END_MS
@@ -76,6 +161,8 @@ export function evaluateSpikeChallenge(
     generatedRps > 0 &&
     p95Latency <= CHALLENGE_MAX_P95_MS &&
     errorRate <= CHALLENGE_MAX_ERROR_RATE;
+  const failedErrorBudget = errorRate > CHALLENGE_MAX_ERROR_RATE;
+  const failedLatencyTarget = p95Latency > CHALLENGE_MAX_P95_MS;
 
   return {
     passed,
@@ -87,6 +174,14 @@ export function evaluateSpikeChallenge(
     bottleneckId: bottleneck?.id ?? null,
     bottleneckName: bottleneck?.name ?? null,
     canScaleBottleneck: bottleneck?.canScale ?? false,
+    representativeTrace: passed
+      ? null
+      : selectRepresentativeTrace(
+          requestTraces,
+          bottleneck?.id ?? null,
+          failedErrorBudget,
+          failedLatencyTarget
+        ),
   };
 }
 

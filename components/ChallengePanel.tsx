@@ -10,6 +10,7 @@ import {
   type ChallengePhase,
   type ChallengeResult,
 } from '@/lib/challenges';
+import type { RequestTrace, RequestTraceReason } from '@/types';
 
 type MobileChallengeDockState = 'collapsed' | 'expanded';
 
@@ -42,6 +43,124 @@ function Metric({
         {value}
       </div>
     </div>
+  );
+}
+
+const TRACE_REASON_LABELS: Record<RequestTraceReason, string> = {
+  'component-failure': 'Component failure',
+  'hop-limit': 'Hop limit reached',
+  'queue-full': 'Queue full',
+  outage: 'Component outage',
+  'no-target': 'No connected target',
+};
+
+function RequestPath({ trace }: { trace: RequestTrace }) {
+  return (
+    <section
+      aria-labelledby="request-path-title"
+      className="mt-4 border-y border-rule py-3"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 id="request-path-title" className="text-[13px] font-semibold text-ink">
+            Representative request
+          </h3>
+          <p className="mt-1 text-[11px] text-muted">
+            {trace.outcome[0].toUpperCase() + trace.outcome.slice(1)}
+            {trace.reason ? ` · ${TRACE_REASON_LABELS[trace.reason]}` : ''}
+          </p>
+        </div>
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted">
+          #{trace.requestId}
+        </span>
+      </div>
+
+      <p className="mt-2 font-mono text-[11px] tabular-nums text-ink">
+        {formatLatency(trace.totalObservedLatencyMs)} observed
+      </p>
+
+      <ol
+        aria-label="Request path from source through each component"
+        className="mt-3 list-none border-l border-rule pl-3"
+      >
+        <li className="relative pb-3">
+          <span
+            aria-hidden="true"
+            className="absolute -left-[1.02rem] top-0.5 h-2 w-2 rounded-full border border-live bg-surface"
+          />
+          <p className="text-[12px] font-semibold leading-snug text-ink">
+            {trace.sourceGeneratorName}
+          </p>
+          <p className="mt-0.5 text-[10px] text-muted">Traffic generator</p>
+        </li>
+        {trace.hops.map((hop, index) => (
+          <li
+            key={`${hop.componentId}-${index}`}
+            className="relative border-t border-rule/70 py-2.5 last:pb-0"
+          >
+            <span
+              aria-hidden="true"
+              className={`absolute -left-[1.02rem] top-3 h-2 w-2 rounded-full border ${
+                hop.outcome === 'completed'
+                  ? 'border-live bg-live'
+                  : 'border-alarm bg-alarm'
+              }`}
+            />
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 break-words text-[12px] font-semibold leading-snug text-ink">
+                {hop.componentName}
+              </p>
+              <span
+                className={`shrink-0 font-mono text-[9px] uppercase tracking-wide ${
+                  hop.outcome === 'completed' ? 'text-live-ink' : 'text-alarm-ink'
+                }`}
+              >
+                {hop.outcome}
+              </span>
+            </div>
+            <dl className="mt-2 grid grid-cols-3 gap-1.5">
+              <div>
+                <dt className="text-[9px] leading-tight text-muted">Queue wait</dt>
+                <dd className="mt-0.5 font-mono text-[10px] tabular-nums text-ink">
+                  {formatLatency(hop.queueWaitMs)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[9px] leading-tight text-muted">Service</dt>
+                <dd className="mt-0.5 font-mono text-[10px] tabular-nums text-ink">
+                  {formatLatency(hop.serviceTimeMs)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[9px] leading-tight text-muted">
+                  Configured latency
+                </dt>
+                <dd className="mt-0.5 font-mono text-[10px] tabular-nums text-ink">
+                  {formatLatency(hop.configuredLatencyMs)}
+                </dd>
+              </div>
+            </dl>
+            {hop.reason && (
+              <p className="mt-1.5 text-[10px] leading-relaxed text-alarm-ink">
+                {TRACE_REASON_LABELS[hop.reason]}
+              </p>
+            )}
+          </li>
+        ))}
+      </ol>
+
+      {trace.hops.length === 0 && (
+        <p className="mt-1 text-[11px] leading-relaxed text-muted">
+          This request ended before reaching a component.
+        </p>
+      )}
+
+      <p className="mt-3 border-l-2 border-rule-strong pl-2.5 text-[10px] leading-relaxed text-muted">
+        Configured latency is separate from queue and service time.{' '}
+        Run again reuses the seed. Replay requires the same graph and component
+        settings; manual outages are not replayed.
+      </p>
+    </section>
   );
 }
 
@@ -234,6 +353,17 @@ export default function ChallengePanel({
             )}
           </div>
         )}
+
+        {phase === 'complete' &&
+          result &&
+          !result.passed &&
+          (result.representativeTrace ? (
+            <RequestPath trace={result.representativeTrace} />
+          ) : (
+            <p className="mt-4 border-y border-rule py-3 text-[11px] leading-relaxed text-muted">
+              No representative request was captured in the 6–9 second spike window.
+            </p>
+          ))}
 
         <div className="mt-6 grid grid-cols-[2fr_1fr] gap-3 border-y border-rule py-3" aria-label="Traffic profile">
           <div className="px-1">

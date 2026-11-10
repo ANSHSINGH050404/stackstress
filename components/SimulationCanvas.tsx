@@ -10,7 +10,7 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MetricsPanel from './MetricsPanel';
 import NodePalette, { DRAG_MIME } from './NodePalette';
 import ChallengePanel from './ChallengePanel';
@@ -24,6 +24,7 @@ import {
   applyLoadProfile,
   resetSimulation,
   startSimulation,
+  stopTraceCapture,
   stopSimulation,
 } from '@/lib/simulationClient';
 import {
@@ -56,6 +57,12 @@ const FIT_VIEW_OPTIONS = { padding: 0.22 };
 const DELETE_KEY_CODE = ['Backspace', 'Delete'];
 const DEFAULT_EDGE_OPTIONS = { type: 'smoothstep' as const };
 const MINIMAP_STYLE = { marginBottom: 12, width: 168, height: 104 };
+
+function createChallengeSeed(): number {
+  const values = new Uint32Array(1);
+  window.crypto.getRandomValues(values);
+  return values[0] || 1;
+}
 
 function ElapsedTime() {
   const elapsed = useSimulationStore((state) => {
@@ -178,34 +185,74 @@ function Simulator() {
   const [challengeAttempt, setChallengeAttempt] = useState(0);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [resultShareUrl, setResultShareUrl] = useState<string | null>(null);
+  const challengeSeed = useRef<number | null>(null);
   const latestHistory = history[history.length - 1];
   const elapsedMs = latestHistory?.t ?? 0;
+  const traceNodeIds = useMemo(() => {
+    const trace = challengeResult?.representativeTrace;
+    return new Set(
+      trace ? [trace.sourceGeneratorId, ...trace.hops.map((hop) => hop.componentId)] : []
+    );
+  }, [challengeResult]);
+  const traceEdgeKeys = useMemo(() => {
+    const trace = challengeResult?.representativeTrace;
+    if (!trace) return new Set<string>();
+
+    const edgeKeys = new Set<string>();
+    let source = trace.sourceGeneratorId;
+    for (const hop of trace.hops) {
+      edgeKeys.add(`${source}\u0000${hop.componentId}`);
+      source = hop.componentId;
+    }
+    return edgeKeys;
+  }, [challengeResult]);
+  const visibleNodes = useMemo(
+    () =>
+      nodes.map((node) =>
+        traceNodeIds.has(node.id)
+          ? {
+              ...node,
+              className: [node.className, 'sim-node-traced']
+                .filter(Boolean)
+                .join(' '),
+            }
+          : node
+      ),
+    [nodes, traceNodeIds]
+  );
   const visibleEdges = useMemo(
     () =>
       edges.map((edge) => {
+        const traced = traceEdgeKeys.has(`${edge.source}\u0000${edge.target}`);
         const targetMetrics = metricsById[edge.target];
         const active = running && (targetMetrics?.requestsIn ?? 0) > 0;
         const color =
-          targetMetrics?.down ||
-          (targetMetrics?.dropped ?? 0) > 0 ||
-          (targetMetrics?.utilization ?? 0) > 0.9
-            ? 'var(--alarm)'
-            : (targetMetrics?.utilization ?? 0) > 0.7
-              ? 'var(--warning)'
-            : active
-                ? 'var(--live)'
-                : 'var(--faint)';
+          traced
+            ? 'var(--live)'
+            : targetMetrics?.down ||
+                (targetMetrics?.dropped ?? 0) > 0 ||
+                (targetMetrics?.utilization ?? 0) > 0.9
+              ? 'var(--alarm)'
+              : (targetMetrics?.utilization ?? 0) > 0.7
+                ? 'var(--warning)'
+                : active
+                  ? 'var(--live)'
+                  : 'var(--faint)';
         return {
           ...edge,
-          animated: active,
+          animated: !traced && active,
+          markerEnd:
+            traced && edge.markerEnd && typeof edge.markerEnd === 'object'
+              ? { ...edge.markerEnd, color: 'var(--live)' }
+              : edge.markerEnd,
           style: {
             ...edge.style,
             stroke: color,
-            strokeWidth: active ? 2 : 1.5,
+            strokeWidth: traced ? 2.75 : active ? 2 : 1.5,
           },
         };
       }),
-    [edges, metricsById, running]
+    [edges, metricsById, running, traceEdgeKeys]
   );
 
   useEffect(() => {
@@ -245,13 +292,30 @@ function Simulator() {
       }
 
       completed = true;
+      stopTraceCapture();
       const result = evaluateSpikeChallenge(
         state.history,
         state.metricsById,
         state.nodes,
-        state.summary
+        state.summary,
+        state.requestTraces
       );
-      if (!result.passed && result.bottleneckId) {
+      const traceNodeIds = result.representativeTrace
+        ? [
+            ...new Set([
+              result.representativeTrace.sourceGeneratorId,
+              ...result.representativeTrace.hops.map((hop) => hop.componentId),
+            ]),
+          ].filter((id) => state.nodes.some((node) => node.id === id))
+        : [];
+      if (traceNodeIds.length > 0) {
+        void fitView({
+          nodes: traceNodeIds.map((id) => ({ id })),
+          padding: 0.65,
+          maxZoom: 0.9,
+          duration: 650,
+        });
+      } else if (!result.passed && result.bottleneckId) {
         void fitView({
           nodes: [{ id: result.bottleneckId }],
           padding: 0.65,
@@ -277,7 +341,9 @@ function Simulator() {
     setChallengePhase('running');
     useSimulationStore.getState().resetMetrics();
     setLoadProfile('spike');
-    resetSimulation();
+    const seed = challengeSeed.current ?? createChallengeSeed();
+    challengeSeed.current = seed;
+    resetSimulation({ seed, captureTraces: true });
     applyLoadProfile('spike');
     setRunning(true);
   };
@@ -371,7 +437,7 @@ function Simulator() {
           onDragOver={onDragOver}
         >
           <ReactFlow
-            nodes={nodes}
+            nodes={visibleNodes}
             edges={visibleEdges}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}

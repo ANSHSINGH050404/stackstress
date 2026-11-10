@@ -1,6 +1,6 @@
 'use client';
 
-import { GraphPayload, LoadProfile } from '../types';
+import { GraphPayload, LoadProfile, SimulationEngineOptions } from '../types';
 import { SimulationEngine } from './engine';
 import { useSimulationStore } from './store';
 
@@ -37,8 +37,11 @@ function syncGraph(force = false): void {
   }
 }
 
-function createEngine(graph: GraphPayload): SimulationEngine {
-  const next = new SimulationEngine(graph);
+function createEngine(
+  graph: GraphPayload,
+  options: SimulationEngineOptions = {}
+): SimulationEngine {
+  const next = new SimulationEngine(graph, options);
   next.setLoadProfile(useSimulationStore.getState().loadProfile);
   return next;
 }
@@ -72,8 +75,12 @@ export function stopSimulation(): void {
   lastSignature = '';
 }
 
-export function resetSimulation(): void {
-  engine = createEngine(currentGraph());
+export function resetSimulation(options: SimulationEngineOptions = {}): void {
+  engine = createEngine(currentGraph(), options);
+}
+
+export function stopTraceCapture(): void {
+  engine?.stopTraceCapture();
 }
 
 export function applyLoadProfile(profile: LoadProfile): void {
