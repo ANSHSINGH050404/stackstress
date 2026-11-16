@@ -1,11 +1,9 @@
-import type { Edge } from '@xyflow/react';
 import type { ChallengeResult } from './challenges';
 import { formatLatency, formatPercent, formatRate } from './format';
-import type { SimNode } from './store';
-import { encodeSharedSimulation } from './shared-simulation';
+import { encodeSharedSimulation, type SharedSimulation } from './shared-simulation';
 
-export function createChallengeUrl(nodes: SimNode[], edges: Edge[]): string | null {
-  const state = encodeSharedSimulation(nodes, edges, 'spike');
+export function createChallengeUrl(scenario: SharedSimulation): string | null {
+  const state = encodeSharedSimulation(scenario);
   if (!state) return null;
 
   return `${window.location.origin}${window.location.pathname}?challenge=spike&state=${state}`;

@@ -7,6 +7,17 @@ export type ComponentType =
 
 export type LoadProfile = 'steady' | 'spike' | 'ramp';
 
+export interface ChallengeThresholds {
+  maxP95LatencyMs: number;
+  maxErrorRate: number;
+}
+
+export interface SimulationScenarioSettings {
+  loadProfile: LoadProfile;
+  seed: number;
+  thresholds: ChallengeThresholds;
+}
+
 export type RequestTraceOutcome = 'completed' | 'failed' | 'dropped';
 
 export type RequestTraceReason =

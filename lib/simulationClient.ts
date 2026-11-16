@@ -41,8 +41,12 @@ function createEngine(
   graph: GraphPayload,
   options: SimulationEngineOptions = {}
 ): SimulationEngine {
-  const next = new SimulationEngine(graph, options);
-  next.setLoadProfile(useSimulationStore.getState().loadProfile);
+  const state = useSimulationStore.getState();
+  const next = new SimulationEngine(graph, {
+    ...options,
+    seed: options.seed ?? state.scenarioSeed ?? undefined,
+  });
+  next.setLoadProfile(state.loadProfile);
   return next;
 }
 

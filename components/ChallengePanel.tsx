@@ -3,14 +3,16 @@
 import { useState } from 'react';
 import { formatLatency, formatPercent, formatRate } from '@/lib/format';
 import {
-  CHALLENGE_MAX_ERROR_RATE,
-  CHALLENGE_MAX_P95_MS,
   SPIKE_CHALLENGE_DURATION_MS,
   SPIKE_WINDOW_START_MS,
   type ChallengePhase,
   type ChallengeResult,
 } from '@/lib/challenges';
-import type { RequestTrace, RequestTraceReason } from '@/types';
+import type {
+  ChallengeThresholds,
+  RequestTrace,
+  RequestTraceReason,
+} from '@/types';
 
 type MobileChallengeDockState = 'collapsed' | 'expanded';
 
@@ -20,6 +22,7 @@ export interface ChallengePanelProps {
   attempt: number;
   baseline: ChallengeResult | null;
   result: ChallengeResult | null;
+  thresholds: ChallengeThresholds;
   isSharedScenario: boolean;
   shareNotice: string | null;
   onStart: () => void;
@@ -170,6 +173,7 @@ export default function ChallengePanel({
   attempt,
   baseline,
   result,
+  thresholds,
   isSharedScenario,
   shareNotice,
   onStart,
@@ -201,11 +205,11 @@ export default function ChallengePanel({
   const failureReasons = result
     ? [
         result.generatedRps <= 0 ? 'No traffic reached the system.' : null,
-        result.p95Latency > CHALLENGE_MAX_P95_MS
-          ? `p95 ${formatLatency(result.p95Latency)} exceeded ${formatLatency(CHALLENGE_MAX_P95_MS)}.`
+        result.p95Latency > thresholds.maxP95LatencyMs
+          ? `p95 ${formatLatency(result.p95Latency)} exceeded ${formatLatency(thresholds.maxP95LatencyMs)}.`
           : null,
-        result.errorRate > CHALLENGE_MAX_ERROR_RATE
-          ? `Errors ${formatPercent(result.errorRate)} exceeded the ${formatPercent(CHALLENGE_MAX_ERROR_RATE)} budget.`
+        result.errorRate > thresholds.maxErrorRate
+          ? `Errors ${formatPercent(result.errorRate)} exceeded the ${formatPercent(thresholds.maxErrorRate)} budget.`
           : null,
       ].filter((reason): reason is string => reason !== null)
     : [];
@@ -393,13 +397,13 @@ export default function ChallengePanel({
           <div>
             <p className="text-[11px] text-muted">Latency target</p>
             <p className="mt-1 font-mono text-[13px] font-semibold text-ink">
-              p95 ≤ {formatLatency(CHALLENGE_MAX_P95_MS)}
+              p95 ≤ {formatLatency(thresholds.maxP95LatencyMs)}
             </p>
           </div>
           <div className="border-l border-rule pl-3">
             <p className="text-[11px] text-muted">Error budget</p>
             <p className="mt-1 font-mono text-[13px] font-semibold text-ink">
-              ≤ {formatPercent(CHALLENGE_MAX_ERROR_RATE)}
+              ≤ {formatPercent(thresholds.maxErrorRate)}
             </p>
           </div>
         </div>

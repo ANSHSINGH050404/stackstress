@@ -8,9 +8,10 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  type Edge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import MetricsPanel from './MetricsPanel';
 import NodePalette, { DRAG_MIME } from './NodePalette';
 import ChallengePanel from './ChallengePanel';
@@ -36,7 +37,7 @@ import {
 } from '@/lib/challenges';
 import { createChallengeUrl, createXIntentUrl, downloadChallengeCard } from '@/lib/sharing';
 import { decodeSharedSimulation } from '@/lib/shared-simulation';
-import { COMPONENT_DEFAULTS, useSimulationStore } from '@/lib/store';
+import { COMPONENT_DEFAULTS, useSimulationStore, type SimNode } from '@/lib/store';
 import type { ComponentType, LoadProfile } from '@/types';
 
 const nodeTypes = {
@@ -62,6 +63,27 @@ function createChallengeSeed(): number {
   const values = new Uint32Array(1);
   window.crypto.getRandomValues(values);
   return values[0] || 1;
+}
+
+function ensureScenarioSeed(): number {
+  const state = useSimulationStore.getState();
+  if (state.scenarioSeed !== null) return state.scenarioSeed;
+
+  const seed = createChallengeSeed();
+  state.setScenarioSeed(seed);
+  return seed;
+}
+
+function createCurrentChallengeUrl(nodes: SimNode[], edges: Edge[]): string | null {
+  const seed = ensureScenarioSeed();
+  const { challengeThresholds } = useSimulationStore.getState();
+  return createChallengeUrl({
+    nodes,
+    edges,
+    loadProfile: 'spike',
+    seed,
+    thresholds: challengeThresholds,
+  });
 }
 
 function ElapsedTime() {
@@ -169,6 +191,9 @@ function Simulator() {
   const metricsById = useSimulationStore((state) => state.metricsById);
   const running = useSimulationStore((state) => state.running);
   const loadProfile = useSimulationStore((state) => state.loadProfile);
+  const challengeThresholds = useSimulationStore(
+    (state) => state.challengeThresholds
+  );
   const isSharedScenario = useSimulationStore((state) => state.sharedScenarioLoaded);
   const onNodesChange = useSimulationStore((state) => state.onNodesChange);
   const onEdgesChange = useSimulationStore((state) => state.onEdgesChange);
@@ -185,7 +210,6 @@ function Simulator() {
   const [challengeAttempt, setChallengeAttempt] = useState(0);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [resultShareUrl, setResultShareUrl] = useState<string | null>(null);
-  const challengeSeed = useRef<number | null>(null);
   const latestHistory = history[history.length - 1];
   const elapsedMs = latestHistory?.t ?? 0;
   const traceNodeIds = useMemo(() => {
@@ -262,7 +286,11 @@ function Simulator() {
     if (token) {
       const shared = decodeSharedSimulation(token);
       if (shared) {
-        replaceScenario(shared.nodes, shared.edges, shared.loadProfile);
+        replaceScenario(shared.nodes, shared.edges, {
+          loadProfile: shared.loadProfile,
+          seed: shared.seed,
+          thresholds: shared.thresholds,
+        });
         resetSimulation();
         fitFrame = window.requestAnimationFrame(() => {
           void fitView(FIT_VIEW_OPTIONS);
@@ -298,7 +326,8 @@ function Simulator() {
         state.metricsById,
         state.nodes,
         state.summary,
-        state.requestTraces
+        state.requestTraces,
+        state.challengeThresholds
       );
       const traceNodeIds = result.representativeTrace
         ? [
@@ -326,7 +355,7 @@ function Simulator() {
       setChallengeResult(result);
       setBaselineResult((baseline) => baseline ?? result);
       setChallengeAttempt((attempt) => attempt + 1);
-      setResultShareUrl(createChallengeUrl(state.nodes, state.edges));
+      setResultShareUrl(createCurrentChallengeUrl(state.nodes, state.edges));
       setChallengePhase('complete');
       state.setRunning(false);
       state.setLoadProfile('steady');
@@ -341,8 +370,7 @@ function Simulator() {
     setChallengePhase('running');
     useSimulationStore.getState().resetMetrics();
     setLoadProfile('spike');
-    const seed = challengeSeed.current ?? createChallengeSeed();
-    challengeSeed.current = seed;
+    const seed = ensureScenarioSeed();
     resetSimulation({ seed, captureTraces: true });
     applyLoadProfile('spike');
     setRunning(true);
@@ -360,7 +388,7 @@ function Simulator() {
   };
 
   const copyChallengeLink = async () => {
-    const url = createChallengeUrl(nodes, edges);
+    const url = createCurrentChallengeUrl(nodes, edges);
     if (!url) {
       setShareNotice('This architecture is too large to share as a link.');
       return;
@@ -389,6 +417,7 @@ function Simulator() {
     attempt: challengeAttempt,
     baseline: baselineResult,
     result: challengeResult,
+    thresholds: challengeThresholds,
     isSharedScenario,
     shareNotice,
     onStart: startChallenge,

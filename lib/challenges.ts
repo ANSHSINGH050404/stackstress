@@ -1,5 +1,6 @@
 import type {
   ComponentConfig,
+  ChallengeThresholds,
   NodeMetrics,
   RequestTrace,
   SimulationSummary,
@@ -9,8 +10,10 @@ import type { HistoryPoint, SimNode } from './store';
 export const SPIKE_CHALLENGE_DURATION_MS = 9_000;
 export const SPIKE_WINDOW_START_MS = 6_000;
 export const SPIKE_WINDOW_END_MS = 9_000;
-export const CHALLENGE_MAX_P95_MS = 800;
-export const CHALLENGE_MAX_ERROR_RATE = 0.05;
+export const DEFAULT_CHALLENGE_THRESHOLDS: ChallengeThresholds = {
+  maxP95LatencyMs: 800,
+  maxErrorRate: 0.05,
+};
 
 export type ChallengePhase = 'ready' | 'running' | 'complete';
 
@@ -147,7 +150,8 @@ export function evaluateSpikeChallenge(
   metricsById: Record<string, NodeMetrics>,
   nodes: SimNode[],
   summary: SimulationSummary | null,
-  requestTraces: readonly RequestTrace[] = []
+  requestTraces: readonly RequestTrace[] = [],
+  thresholds: ChallengeThresholds = DEFAULT_CHALLENGE_THRESHOLDS
 ): ChallengeResult {
   const spikeSamples = history.filter(
     (point) => point.t > SPIKE_WINDOW_START_MS && point.t <= SPIKE_WINDOW_END_MS
@@ -159,10 +163,10 @@ export function evaluateSpikeChallenge(
   const bottleneck = findBottleneck(nodes, metricsById);
   const passed =
     generatedRps > 0 &&
-    p95Latency <= CHALLENGE_MAX_P95_MS &&
-    errorRate <= CHALLENGE_MAX_ERROR_RATE;
-  const failedErrorBudget = errorRate > CHALLENGE_MAX_ERROR_RATE;
-  const failedLatencyTarget = p95Latency > CHALLENGE_MAX_P95_MS;
+    p95Latency <= thresholds.maxP95LatencyMs &&
+    errorRate <= thresholds.maxErrorRate;
+  const failedErrorBudget = errorRate > thresholds.maxErrorRate;
+  const failedLatencyTarget = p95Latency > thresholds.maxP95LatencyMs;
 
   return {
     passed,

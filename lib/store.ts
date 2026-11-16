@@ -16,12 +16,15 @@ import { create } from 'zustand';
 import {
   ComponentConfig,
   ComponentType,
+  ChallengeThresholds,
   LoadProfile,
   NodeMetrics,
   RequestTrace,
+  SimulationScenarioSettings,
   SimulationSummary,
   SimulationUpdate,
 } from '../types';
+import { DEFAULT_CHALLENGE_THRESHOLDS } from './challenges';
 
 export type SimNodeData = {
   component: ComponentConfig;
@@ -190,6 +193,8 @@ interface SimulationStore {
   requestTraces: RequestTrace[];
   running: boolean;
   loadProfile: LoadProfile;
+  scenarioSeed: number | null;
+  challengeThresholds: ChallengeThresholds;
   sharedScenarioLoaded: boolean;
   addNode: (type: ComponentType, position: XYPosition) => void;
   updateNodeData: (id: string, patch: Partial<ComponentConfig>) => void;
@@ -199,7 +204,12 @@ interface SimulationStore {
   applyUpdate: (update: SimulationUpdate) => void;
   setRunning: (running: boolean) => void;
   setLoadProfile: (profile: LoadProfile) => void;
-  replaceScenario: (nodes: SimNode[], edges: Edge[], loadProfile: LoadProfile) => void;
+  setScenarioSeed: (seed: number) => void;
+  replaceScenario: (
+    nodes: SimNode[],
+    edges: Edge[],
+    settings: SimulationScenarioSettings
+  ) => void;
   resetMetrics: () => void;
 }
 
@@ -215,6 +225,8 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   requestTraces: [],
   running: false,
   loadProfile: 'steady',
+  scenarioSeed: null,
+  challengeThresholds: { ...DEFAULT_CHALLENGE_THRESHOLDS },
   sharedScenarioLoaded: false,
 
   addNode: (type, position) =>
@@ -297,7 +309,9 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
 
   setLoadProfile: (loadProfile) => set({ loadProfile }),
 
-  replaceScenario: (nodes, edges, loadProfile) =>
+  setScenarioSeed: (scenarioSeed) => set({ scenarioSeed }),
+
+  replaceScenario: (nodes, edges, settings) =>
     set(() => {
       for (const node of nodes) {
         const suffix = /-(\d+)$/.exec(node.id)?.[1];
@@ -307,7 +321,9 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
       return {
         nodes,
         edges: edges.map((edge) => ({ ...edge, ...EDGE_STYLE })),
-        loadProfile,
+        loadProfile: settings.loadProfile,
+        scenarioSeed: settings.seed,
+        challengeThresholds: { ...settings.thresholds },
         sharedScenarioLoaded: true,
         running: false,
         history: [],
