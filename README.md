@@ -1,4 +1,4 @@
-# System Simulator
+# StackStress
 
 Draw a system architecture, push traffic through it, and watch queues, latency, and errors react in real time.
 

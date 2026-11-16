@@ -55,7 +55,7 @@ export function downloadChallengeCard(
   context.textBaseline = 'middle';
   context.fillStyle = '#cbd5e1';
   context.font = '700 20px Arial, sans-serif';
-  context.fillText('SYSTEM SIMULATOR', 92, 79);
+  context.fillText('STACKSTRESS', 92, 79);
   context.fillStyle = '#94a3b8';
   context.font = '600 16px Arial, sans-serif';
   context.fillText('3X TRAFFIC CHALLENGE', 64, 142);
@@ -117,7 +117,7 @@ export function downloadChallengeCard(
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'system-simulator-challenge.png';
+    link.download = 'stackstress-challenge.png';
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }, 'image/png');

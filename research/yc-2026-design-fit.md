@@ -1,4 +1,4 @@
-# YC 2026 Design Fit for the System Simulator
+# YC 2026 Design Fit for StackStress
 
 As of November 8, 2026, YC's directory lists four 2026 batches: Winter (197
 companies), Spring (192), Summer (227), and Fall (216), for 832 total. This is a

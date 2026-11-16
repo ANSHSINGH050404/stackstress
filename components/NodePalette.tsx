@@ -36,13 +36,13 @@ export default function NodePalette() {
       <header className="flex h-[44px] shrink-0 items-center justify-between border-b border-rule px-3.5 lg:h-auto lg:px-5 lg:py-5">
         <div className="min-w-0">
           <h1 className="text-[15px] font-semibold tracking-tight text-ink">
-            System Simulator
+            StackStress
           </h1>
           <p className="hidden text-[12px] text-muted lg:block">
             Architecture workbench
           </p>
         </div>
-        <span className="sim-designator hidden lg:inline-flex">SIM</span>
+        <span className="sim-designator hidden lg:inline-flex">SS</span>
       </header>
 
       <div className="h-[60px] shrink-0 px-2 py-1 lg:h-auto lg:min-h-0 lg:flex-1 lg:overflow-x-hidden lg:overflow-y-auto lg:px-4 lg:py-5">

@@ -13,9 +13,9 @@ const overpassMono = Overpass_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "System Simulator — Design and stress-test architectures",
+  title: "StackStress — Design and stress-test architectures",
   description:
-    "Draw a system architecture, run traffic through it, and watch queues, latency, and bottlenecks in real time.",
+    "Design a system architecture, run traffic through it, and see how queues, latency, and bottlenecks behave under pressure.",
 };
 
 export const viewport: Viewport = {
