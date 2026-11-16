@@ -5,7 +5,8 @@ import type {
   RequestTrace,
   SimulationSummary,
 } from '@/types';
-import type { HistoryPoint, SimNode } from './store';
+import { componentCostPerHour } from './components';
+import type { HistoryPoint, NodeHistoryPoint, SimNode } from './store';
 
 export const SPIKE_CHALLENGE_DURATION_MS = 9_000;
 export const SPIKE_WINDOW_START_MS = 6_000;
@@ -17,6 +18,15 @@ export const DEFAULT_CHALLENGE_THRESHOLDS: ChallengeThresholds = {
 
 export type ChallengePhase = 'ready' | 'running' | 'complete';
 
+export interface ChallengeEvidence {
+  nodeId: string;
+  nodeName: string;
+  peakQueueDepth: number;
+  peakUtilization: number;
+  dropped: number;
+  firstFailureAt: number | null;
+}
+
 export interface ChallengeResult {
   passed: boolean;
   p95Latency: number;
@@ -24,10 +34,13 @@ export interface ChallengeResult {
   completedRps: number;
   generatedRps: number;
   dropped: number;
+  costPerHour: number;
+  maxCostPerHour?: number;
   bottleneckId: string | null;
   bottleneckName: string | null;
   canScaleBottleneck: boolean;
   representativeTrace: RequestTrace | null;
+  evidence: ChallengeEvidence[];
 }
 
 function average(values: number[]): number {
@@ -35,9 +48,10 @@ function average(values: number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function findBottleneck(
+export function findBottleneck(
   nodes: SimNode[],
-  metricsById: Record<string, NodeMetrics>
+  metricsById: Record<string, NodeMetrics>,
+  nodeHistory: Record<string, NodeHistoryPoint[]> = {}
 ): { id: string; name: string; canScale: boolean } | null {
   let bottleneck: { id: string; name: string; score: number; canScale: boolean } | null =
     null;
@@ -47,11 +61,26 @@ function findBottleneck(
     const metrics = metricsById[node.id];
     if (!metrics || component.type === 'traffic-generator') continue;
 
+    const history = nodeHistory[node.id] ?? [];
+    const peakQueueDepth =
+      history.length > 0
+        ? Math.max(...history.map((point) => point.queueDepth))
+        : metrics.queueDepth;
+    const peakUtilization =
+      history.length > 0
+        ? Math.max(...history.map((point) => point.utilization))
+        : metrics.utilization;
+    const dropped =
+      history.length > 0
+        ? history.reduce((sum, point) => sum + point.dropped, 0)
+        : metrics.dropped;
+    const errors =
+      history.length > 0
+        ? history.reduce((sum, point) => sum + point.errors, 0)
+        : metrics.errors;
+
     const score =
-      metrics.dropped * 10 +
-      metrics.errors * 2 +
-      metrics.queueDepth +
-      metrics.utilization * 100;
+      dropped * 10 + errors * 2 + peakQueueDepth + peakUtilization * 100;
     if (score <= 0 || (bottleneck && score <= bottleneck.score)) continue;
 
     bottleneck = {
@@ -60,11 +89,95 @@ function findBottleneck(
       score,
       canScale:
         !metrics.down &&
-        (metrics.dropped > 0 || metrics.queueDepth > 0 || metrics.utilization >= 0.7),
+        (dropped > 0 || peakQueueDepth > 0 || peakUtilization >= 0.7),
     };
   }
 
   return bottleneck;
+}
+
+function buildEvidence(
+  nodes: SimNode[],
+  metricsById: Record<string, NodeMetrics>,
+  nodeHistory: Record<string, NodeHistoryPoint[]>
+): ChallengeEvidence[] {
+  return nodes
+    .map((node) => {
+      const metrics = metricsById[node.id];
+      if (!metrics || node.data.component.type === 'traffic-generator') {
+        return null;
+      }
+
+      const history = nodeHistory[node.id] ?? [];
+      let peakQueueDepth = metrics.queueDepth;
+      let peakUtilization = metrics.utilization;
+      let dropped = metrics.dropped;
+      let firstFailureAt: number | null = null;
+
+      if (history.length > 0) {
+        peakQueueDepth = Math.max(...history.map((point) => point.queueDepth));
+        peakUtilization = Math.max(
+          ...history.map((point) => point.utilization)
+        );
+        dropped = history.reduce((sum, point) => sum + point.dropped, 0);
+        const failure = history.find(
+          (point) => point.dropped > 0 || point.errors > 0
+        );
+        firstFailureAt = failure?.t ?? null;
+      } else if (metrics.dropped > 0 || metrics.errors > 0) {
+        firstFailureAt = null;
+      }
+
+      const score =
+        dropped * 10 +
+        peakQueueDepth * 2 +
+        peakUtilization * 100 +
+        (metrics.errors ?? 0) * 2;
+      if (score <= 0) return null;
+
+      return {
+        nodeId: node.id,
+        nodeName: node.data.component.name,
+        peakQueueDepth,
+        peakUtilization,
+        dropped,
+        firstFailureAt,
+        score,
+      };
+    })
+    .filter(
+      (
+        value
+      ): value is ChallengeEvidence & {
+        score: number;
+      } => value !== null
+    )
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((value) => ({
+      nodeId: value.nodeId,
+      nodeName: value.nodeName,
+      peakQueueDepth: value.peakQueueDepth,
+      peakUtilization: value.peakUtilization,
+      dropped: value.dropped,
+      firstFailureAt: value.firstFailureAt,
+    }));
+}
+
+function scenarioCost(
+  nodes: SimNode[],
+  metricsById: Record<string, NodeMetrics>
+): number {
+  return nodes.reduce((sum, node) => {
+    const instances = metricsById[node.id]?.instances;
+    return (
+      sum +
+      componentCostPerHour(
+        node.data.component,
+        instances ?? node.data.component.minInstances ?? 1
+      )
+    );
+  }, 0);
 }
 
 function selectSlowestTrace(traces: readonly RequestTrace[]): RequestTrace | null {
@@ -151,7 +264,8 @@ export function evaluateSpikeChallenge(
   nodes: SimNode[],
   summary: SimulationSummary | null,
   requestTraces: readonly RequestTrace[] = [],
-  thresholds: ChallengeThresholds = DEFAULT_CHALLENGE_THRESHOLDS
+  thresholds: ChallengeThresholds = DEFAULT_CHALLENGE_THRESHOLDS,
+  nodeHistory: Record<string, NodeHistoryPoint[]> = {}
 ): ChallengeResult {
   const spikeSamples = history.filter(
     (point) => point.t > SPIKE_WINDOW_START_MS && point.t <= SPIKE_WINDOW_END_MS
@@ -160,11 +274,16 @@ export function evaluateSpikeChallenge(
   const errorRate = average(spikeSamples.map((point) => point.errorRate));
   const completedRps = average(spikeSamples.map((point) => point.rps));
   const generatedRps = average(spikeSamples.map((point) => point.generatedRps));
-  const bottleneck = findBottleneck(nodes, metricsById);
+  const bottleneck = findBottleneck(nodes, metricsById, nodeHistory);
+  const costPerHour = scenarioCost(nodes, metricsById);
+  const costExceeded =
+    thresholds.maxCostPerHour !== undefined &&
+    costPerHour > thresholds.maxCostPerHour;
   const passed =
     generatedRps > 0 &&
     p95Latency <= thresholds.maxP95LatencyMs &&
-    errorRate <= thresholds.maxErrorRate;
+    errorRate <= thresholds.maxErrorRate &&
+    !costExceeded;
   const failedErrorBudget = errorRate > thresholds.maxErrorRate;
   const failedLatencyTarget = p95Latency > thresholds.maxP95LatencyMs;
 
@@ -175,6 +294,8 @@ export function evaluateSpikeChallenge(
     completedRps,
     generatedRps,
     dropped: summary?.totalDropped ?? 0,
+    costPerHour,
+    maxCostPerHour: thresholds.maxCostPerHour,
     bottleneckId: bottleneck?.id ?? null,
     bottleneckName: bottleneck?.name ?? null,
     canScaleBottleneck: bottleneck?.canScale ?? false,
@@ -186,6 +307,7 @@ export function evaluateSpikeChallenge(
           failedErrorBudget,
           failedLatencyTarget
         ),
+    evidence: buildEvidence(nodes, metricsById, nodeHistory),
   };
 }
 

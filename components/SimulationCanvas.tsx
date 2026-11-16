@@ -15,6 +15,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import MetricsPanel from './MetricsPanel';
 import NodePalette, { DRAG_MIME } from './NodePalette';
 import ChallengePanel from './ChallengePanel';
+import InspectorPanel from './InspectorPanel';
+import ScenarioPicker from './ScenarioPicker';
+import GraphHealth from './GraphHealth';
+import CommandPalette, { type PaletteCommand } from './CommandPalette';
 import CacheNode from './nodes/CacheNode';
 import DatabaseNode from './nodes/DatabaseNode';
 import LoadBalancerNode from './nodes/LoadBalancerNode';
@@ -35,10 +39,23 @@ import {
   type ChallengePhase,
   type ChallengeResult,
 } from '@/lib/challenges';
-import { createChallengeUrl, createXIntentUrl, downloadChallengeCard } from '@/lib/sharing';
+import {
+  createChallengeUrl,
+  createXIntentUrl,
+  downloadChallengeCard,
+} from '@/lib/sharing';
 import { decodeSharedSimulation } from '@/lib/shared-simulation';
-import { COMPONENT_DEFAULTS, useSimulationStore, type SimNode } from '@/lib/store';
-import type { ComponentType, LoadProfile } from '@/types';
+import {
+  COMPONENT_DEFAULTS,
+  useSimulationStore,
+  type SimNode,
+} from '@/lib/store';
+import { buildFixCandidates, findBreakingPoint, type BenchmarkResult, type FixCandidate } from '@/lib/benchmark';
+import { tidyPositions } from '@/lib/layout';
+import { loadSavedScenario, saveScenario } from '@/lib/persistence';
+import { getDailyChallenge, type DailyChallenge } from '@/lib/daily';
+import { SCENARIOS, type ScenarioDefinition } from '@/lib/scenarios';
+import type { ChallengeThresholds, ComponentType, LoadProfile } from '@/types';
 
 const nodeTypes = {
   'traffic-generator': TrafficGeneratorNode,
@@ -74,15 +91,23 @@ function ensureScenarioSeed(): number {
   return seed;
 }
 
-function createCurrentChallengeUrl(nodes: SimNode[], edges: Edge[]): string | null {
+function currentChallengeUrl(nodes: SimNode[], edges: Edge[]): string | null {
+  const state = useSimulationStore.getState();
   const seed = ensureScenarioSeed();
-  const { challengeThresholds } = useSimulationStore.getState();
   return createChallengeUrl({
     nodes,
     edges,
     loadProfile: 'spike',
     seed,
-    thresholds: challengeThresholds,
+    thresholds: state.challengeThresholds,
+    faults: state.faults.length > 0 ? state.faults : undefined,
+  });
+}
+
+function signatureOf(nodes: SimNode[], edges: Edge[]): string {
+  return JSON.stringify({
+    components: nodes.map((node) => node.data.component),
+    edges: edges.map((edge) => [edge.source, edge.target]),
   });
 }
 
@@ -99,10 +124,37 @@ function ElapsedTime() {
   );
 }
 
-function Toolbar({ challengeRunning }: { challengeRunning: boolean }) {
+interface ToolbarProps {
+  challengeRunning: boolean;
+  activeScenarioId: string | null;
+  daily: DailyChallenge | null;
+  canUndo: boolean;
+  canRedo: boolean;
+  onSelectScenario: (scenario: ScenarioDefinition) => void;
+  onDaily: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onTidy: () => void;
+  onReset: () => void;
+  onOpenPalette: () => void;
+}
+
+function Toolbar({
+  challengeRunning,
+  activeScenarioId,
+  daily,
+  canUndo,
+  canRedo,
+  onSelectScenario,
+  onDaily,
+  onUndo,
+  onRedo,
+  onTidy,
+  onReset,
+  onOpenPalette,
+}: ToolbarProps) {
   const running = useSimulationStore((state) => state.running);
   const setRunning = useSimulationStore((state) => state.setRunning);
-  const resetMetrics = useSimulationStore((state) => state.resetMetrics);
   const loadProfile = useSimulationStore((state) => state.loadProfile);
   const setLoadProfile = useSimulationStore((state) => state.setLoadProfile);
 
@@ -142,20 +194,25 @@ function Toolbar({ challengeRunning }: { challengeRunning: boolean }) {
         <button
           type="button"
           aria-label="Reset simulation"
-          onClick={() => {
-            resetSimulation();
-            resetMetrics();
-          }}
+          onClick={onReset}
           className="sim-control-button shrink-0 whitespace-nowrap rounded-[3px] px-3 text-[12px] font-medium text-muted transition-colors hover:bg-paper hover:text-ink"
         >
           Reset
         </button>
-        <ElapsedTime />
+        <ScenarioPicker
+          activeId={activeScenarioId}
+          daily={daily}
+          onSelect={onSelectScenario}
+          onDaily={onDaily}
+        />
+        <span className="ml-auto flex items-center">
+          <ElapsedTime />
+        </span>
       </div>
 
       <span className="mx-1 hidden h-5 w-px bg-rule lg:block" />
-      <div className="flex min-w-0 items-center gap-2 lg:gap-2.5">
-        <span className="shrink-0 pl-1 text-[12px] font-medium text-muted">
+      <div className="flex min-w-0 items-center gap-1.5 lg:gap-2.5">
+        <span className="hidden shrink-0 pl-1 text-[12px] font-medium text-muted sm:inline">
           Load
         </span>
         <div className="flex min-w-0 items-center gap-0.5 rounded-[3px] border border-rule bg-paper p-0.5">
@@ -179,6 +236,48 @@ function Toolbar({ challengeRunning }: { challengeRunning: boolean }) {
             </button>
           ))}
         </div>
+
+        <span className="mx-0.5 hidden h-5 w-px bg-rule sm:block" />
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            aria-label="Undo graph change"
+            title="Undo (Ctrl/Cmd+Z)"
+            disabled={!canUndo}
+            onClick={onUndo}
+            className="sim-control-button grid min-w-8 place-items-center rounded-[2px] px-1.5 text-[14px] text-muted transition-colors hover:bg-paper hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            aria-label="Redo graph change"
+            title="Redo (Ctrl/Cmd+Shift+Z)"
+            disabled={!canRedo}
+            onClick={onRedo}
+            className="sim-control-button grid min-w-8 place-items-center rounded-[2px] px-1.5 text-[14px] text-muted transition-colors hover:bg-paper hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            ↷
+          </button>
+          <button
+            type="button"
+            onClick={onTidy}
+            className="sim-control-button whitespace-nowrap rounded-[2px] px-2 text-[11px] font-medium text-muted transition-colors hover:bg-paper hover:text-ink"
+          >
+            Tidy
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenPalette}
+          className="sim-control-button ml-auto hidden shrink-0 items-center gap-1.5 rounded-[2px] border border-rule bg-paper px-2.5 text-[10px] font-medium text-muted transition-colors hover:text-ink lg:flex"
+        >
+          Commands
+          <kbd className="rounded-[1px] border border-rule bg-surface px-1 font-mono text-[9px]">
+            Ctrl K
+          </kbd>
+        </button>
       </div>
     </div>
   );
@@ -194,7 +293,11 @@ function Simulator() {
   const challengeThresholds = useSimulationStore(
     (state) => state.challengeThresholds
   );
-  const isSharedScenario = useSimulationStore((state) => state.sharedScenarioLoaded);
+  const isSharedScenario = useSimulationStore(
+    (state) => state.sharedScenarioLoaded
+  );
+  const pastCount = useSimulationStore((state) => state.past.length);
+  const futureCount = useSimulationStore((state) => state.future.length);
   const onNodesChange = useSimulationStore((state) => state.onNodesChange);
   const onEdgesChange = useSimulationStore((state) => state.onEdgesChange);
   const onConnect = useSimulationStore((state) => state.onConnect);
@@ -203,19 +306,53 @@ function Simulator() {
   const setLoadProfile = useSimulationStore((state) => state.setLoadProfile);
   const replaceScenario = useSimulationStore((state) => state.replaceScenario);
   const updateNodeData = useSimulationStore((state) => state.updateNodeData);
+  const selectNode = useSimulationStore((state) => state.selectNode);
+  const undo = useSimulationStore((state) => state.undo);
+  const redo = useSimulationStore((state) => state.redo);
+  const setNodePositions = useSimulationStore((state) => state.setNodePositions);
+  const setChallengeThresholds = useSimulationStore(
+    (state) => state.setChallengeThresholds
+  );
   const { fitView, screenToFlowPosition } = useReactFlow();
   const [challengePhase, setChallengePhase] = useState<ChallengePhase>('ready');
-  const [challengeResult, setChallengeResult] = useState<ChallengeResult | null>(null);
-  const [baselineResult, setBaselineResult] = useState<ChallengeResult | null>(null);
+  const [challengeResult, setChallengeResult] =
+    useState<ChallengeResult | null>(null);
+  const [baselineResult, setBaselineResult] =
+    useState<ChallengeResult | null>(null);
   const [challengeAttempt, setChallengeAttempt] = useState(0);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [resultShareUrl, setResultShareUrl] = useState<string | null>(null);
+  const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
+  const [daily, setDaily] = useState<DailyChallenge | null>(null);
+  const [today, setToday] = useState<DailyChallenge | null>(null);
+  const [benchmark, setBenchmark] = useState<BenchmarkResult | null>(null);
+  const [benchmarkSignature, setBenchmarkSignature] = useState<string | null>(
+    null
+  );
+  const [benchmarkRunning, setBenchmarkRunning] = useState(false);
+  const [fixCandidates, setFixCandidates] = useState<FixCandidate[]>([]);
+  const [fixSignature, setFixSignature] = useState<string | null>(null);
+  const [fixLabRunning, setFixLabRunning] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    // Reading the clock must happen after prerender. The daily label is only
+    // visible inside menus that open after mount, so a deferred read is fine.
+    const timer = window.setTimeout(() => setToday(getDailyChallenge()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const latestHistory = history[history.length - 1];
   const elapsedMs = latestHistory?.t ?? 0;
   const traceNodeIds = useMemo(() => {
     const trace = challengeResult?.representativeTrace;
     return new Set(
-      trace ? [trace.sourceGeneratorId, ...trace.hops.map((hop) => hop.componentId)] : []
+      trace
+        ? [
+            trace.sourceGeneratorId,
+            ...trace.hops.map((hop) => hop.componentId),
+          ]
+        : []
     );
   }, [challengeResult]);
   const traceEdgeKeys = useMemo(() => {
@@ -244,24 +381,35 @@ function Simulator() {
       ),
     [nodes, traceNodeIds]
   );
+  const maxIncoming = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...Object.values(metricsById).map((metrics) => metrics.requestsIn)
+      ),
+    [metricsById]
+  );
   const visibleEdges = useMemo(
     () =>
       edges.map((edge) => {
         const traced = traceEdgeKeys.has(`${edge.source}\u0000${edge.target}`);
         const targetMetrics = metricsById[edge.target];
         const active = running && (targetMetrics?.requestsIn ?? 0) > 0;
-        const color =
-          traced
-            ? 'var(--live)'
-            : targetMetrics?.down ||
-                (targetMetrics?.dropped ?? 0) > 0 ||
-                (targetMetrics?.utilization ?? 0) > 0.9
-              ? 'var(--alarm)'
-              : (targetMetrics?.utilization ?? 0) > 0.7
-                ? 'var(--warning)'
-                : active
-                  ? 'var(--live)'
-                  : 'var(--faint)';
+        const loadRatio = Math.min(
+          1,
+          (targetMetrics?.requestsIn ?? 0) / maxIncoming
+        );
+        const color = traced
+          ? 'var(--live)'
+          : targetMetrics?.down ||
+              (targetMetrics?.dropped ?? 0) > 0 ||
+              (targetMetrics?.utilization ?? 0) > 0.9
+            ? 'var(--alarm)'
+            : (targetMetrics?.utilization ?? 0) > 0.7
+              ? 'var(--warning)'
+              : active
+                ? 'var(--live)'
+                : 'var(--faint)';
         return {
           ...edge,
           animated: !traced && active,
@@ -272,37 +420,118 @@ function Simulator() {
           style: {
             ...edge.style,
             stroke: color,
-            strokeWidth: traced ? 2.75 : active ? 2 : 1.5,
+            strokeWidth: traced
+              ? 2.75
+              : active
+                ? 1.25 + 2.25 * loadRatio
+                : 1.25,
           },
         };
       }),
-    [edges, metricsById, running, traceEdgeKeys]
+    [edges, metricsById, running, traceEdgeKeys, maxIncoming]
   );
 
+  const graphSignature = useMemo(
+    () => signatureOf(nodes, edges),
+    [nodes, edges]
+  );
+  const activeBenchmark =
+    benchmarkSignature === graphSignature ? benchmark : null;
+  const activeFixCandidates =
+    fixSignature === graphSignature ? fixCandidates : [];
+
+  // Restore a shared URL first, then the local autosave, then the starter graph.
   useEffect(() => {
     let fitFrame: number | undefined;
+    let loaded = false;
     const params = new URLSearchParams(window.location.search);
     const token = params.get('state');
     if (token) {
       const shared = decodeSharedSimulation(token);
       if (shared) {
-        replaceScenario(shared.nodes, shared.edges, {
-          loadProfile: shared.loadProfile,
-          seed: shared.seed,
-          thresholds: shared.thresholds,
-        });
-        resetSimulation();
-        fitFrame = window.requestAnimationFrame(() => {
-          void fitView(FIT_VIEW_OPTIONS);
-        });
+        replaceScenario(
+          shared.nodes,
+          shared.edges,
+          {
+            loadProfile: shared.loadProfile,
+            seed: shared.seed,
+            thresholds: shared.thresholds,
+            faults: shared.faults,
+          },
+          'shared'
+        );
+        resetSimulation({ seed: shared.seed, faults: shared.faults ?? [] });
+        selectNode(null);
+        loaded = true;
       }
+    } else {
+      const saved = loadSavedScenario();
+      if (saved) {
+        const seed = saved.seed ?? createChallengeSeed();
+        replaceScenario(
+          saved.nodes,
+          saved.edges,
+          {
+            loadProfile: saved.loadProfile,
+            seed,
+            thresholds: saved.thresholds,
+            faults: saved.faults,
+          },
+          'saved'
+        );
+        resetSimulation({ seed, faults: saved.faults });
+        loaded = true;
+      }
+    }
+
+    if (loaded) {
+      fitFrame = window.requestAnimationFrame(() => {
+        void fitView(FIT_VIEW_OPTIONS);
+      });
     }
     startSimulation();
     return () => {
       if (fitFrame !== undefined) window.cancelAnimationFrame(fitFrame);
       stopSimulation();
     };
-  }, [fitView, replaceScenario]);
+  }, [fitView, replaceScenario, selectNode]);
+
+  // Best-effort local autosave. Persistence stays out of the store so engine
+  // tests remain pure and deterministic.
+  useEffect(() => {
+    let timer: number | undefined;
+    const snapshot = () => {
+      const state = useSimulationStore.getState();
+      saveScenario({
+        nodes: state.nodes,
+        edges: state.edges,
+        loadProfile: state.loadProfile,
+        seed: state.scenarioSeed,
+        thresholds: state.challengeThresholds,
+        faults: state.faults,
+      });
+    };
+    const unsubscribe = useSimulationStore.subscribe((state, previous) => {
+      if (
+        state.nodes === previous.nodes &&
+        state.edges === previous.edges &&
+        state.loadProfile === previous.loadProfile &&
+        state.scenarioSeed === previous.scenarioSeed &&
+        state.challengeThresholds === previous.challengeThresholds &&
+        state.faults === previous.faults
+      ) {
+        return;
+      }
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = window.setTimeout(snapshot, 700);
+    });
+    window.addEventListener('pagehide', snapshot);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      unsubscribe();
+      window.removeEventListener('pagehide', snapshot);
+    };
+  }, []);
 
   useEffect(() => {
     if (challengePhase !== 'running') return;
@@ -327,7 +556,8 @@ function Simulator() {
         state.nodes,
         state.summary,
         state.requestTraces,
-        state.challengeThresholds
+        state.challengeThresholds,
+        state.nodeHistory
       );
       const traceNodeIds = result.representativeTrace
         ? [
@@ -355,16 +585,99 @@ function Simulator() {
       setChallengeResult(result);
       setBaselineResult((baseline) => baseline ?? result);
       setChallengeAttempt((attempt) => attempt + 1);
-      setResultShareUrl(createCurrentChallengeUrl(state.nodes, state.edges));
+      setResultShareUrl(currentChallengeUrl(state.nodes, state.edges));
       setChallengePhase('complete');
       state.setRunning(false);
       state.setLoadProfile('steady');
       applyLoadProfile('steady');
+
+      if (!result.passed && result.bottleneckId) {
+        setFixLabRunning(true);
+        const seed = state.scenarioSeed ?? 1;
+        window.setTimeout(() => {
+          setFixCandidates(
+            buildFixCandidates(
+              state.nodes,
+              state.edges,
+              seed,
+              state.challengeThresholds,
+              result.bottleneckId,
+              state.faults
+            )
+          );
+          setFixSignature(signatureOf(state.nodes, state.edges));
+          setFixLabRunning(false);
+        }, 20);
+      } else {
+        setFixCandidates([]);
+        setFixSignature(null);
+        setFixLabRunning(false);
+      }
     });
   }, [challengePhase, fitView]);
 
+  const clearChallengeUi = useCallback(() => {
+    setChallengePhase('ready');
+    setChallengeResult(null);
+    setBaselineResult(null);
+    setChallengeAttempt(0);
+    setResultShareUrl(null);
+    setFixCandidates([]);
+    setFixSignature(null);
+    setFixLabRunning(false);
+    setBenchmark(null);
+    setBenchmarkSignature(null);
+    setShareNotice(null);
+  }, []);
+
+  const applyScenario = useCallback(
+    (scenario: ScenarioDefinition, dailyChallenge: DailyChallenge | null) => {
+      const seed = dailyChallenge?.seed ?? scenario.seed;
+      replaceScenario(
+        scenario.nodes,
+        scenario.edges,
+        {
+          loadProfile: scenario.loadProfile,
+          seed,
+          thresholds: scenario.thresholds,
+          faults: scenario.faults,
+        },
+        dailyChallenge ? 'daily' : 'template'
+      );
+      resetSimulation({ seed, faults: scenario.faults ?? [] });
+      selectNode(null);
+      setDaily(dailyChallenge);
+      setActiveScenarioId(dailyChallenge ? null : scenario.id);
+      clearChallengeUi();
+      window.requestAnimationFrame(() => {
+        void fitView({ padding: 0.18, duration: 450 });
+      });
+    },
+    [clearChallengeUi, fitView, replaceScenario, selectNode]
+  );
+
+  const handleSelectScenario = useCallback(
+    (scenario: ScenarioDefinition) => {
+      applyScenario(scenario, null);
+    },
+    [applyScenario]
+  );
+
+  const handleDaily = useCallback(() => {
+    if (!today) return;
+    const scenario =
+      SCENARIOS.find((candidate) => candidate.id === 'three-tier') ??
+      SCENARIOS[0];
+    if (!scenario) return;
+    applyScenario(scenario, today);
+    setShareNotice(`${today.label} loaded. Run the spike when you are ready.`);
+  }, [applyScenario, today]);
+
   const startChallenge = () => {
     setShareNotice(null);
+    setBenchmark(null);
+    setFixCandidates([]);
+    setFixLabRunning(false);
     setChallengeResult(null);
     setResultShareUrl(null);
     setChallengePhase('running');
@@ -378,17 +691,22 @@ function Simulator() {
 
   const scaleBottleneck = () => {
     if (!challengeResult?.bottleneckId) return;
-    const bottleneck = nodes.find((node) => node.id === challengeResult.bottleneckId);
+    const bottleneck = nodes.find(
+      (node) => node.id === challengeResult.bottleneckId
+    );
     if (!bottleneck) return;
 
     updateNodeData(bottleneck.id, {
       throughputLimit: scaleComponentCapacity(bottleneck.data.component),
     });
-    setShareNotice(`${bottleneck.data.component.name} capacity increased. Run the challenge again.`);
+    setFixCandidates([]);
+    setShareNotice(
+      `${bottleneck.data.component.name} capacity increased. Run the challenge again.`
+    );
   };
 
   const copyChallengeLink = async () => {
-    const url = createCurrentChallengeUrl(nodes, edges);
+    const url = currentChallengeUrl(nodes, edges);
     if (!url) {
       setShareNotice('This architecture is too large to share as a link.');
       return;
@@ -402,14 +720,222 @@ function Simulator() {
     }
   };
 
-  const xShareHref =
-    challengeResult && resultShareUrl
-      ? createXIntentUrl(challengeResult, resultShareUrl)
-      : null;
+  const runBenchmark = () => {
+    if (benchmarkRunning) return;
+    const state = useSimulationStore.getState();
+    if (
+      !state.nodes.some(
+        (node) => node.data.component.type === 'traffic-generator'
+      )
+    ) {
+      setShareNotice('Add a traffic generator before benchmarking.');
+      return;
+    }
+    const seed = ensureScenarioSeed();
+    setBenchmarkRunning(true);
+    setShareNotice(null);
+    window.setTimeout(() => {
+      const result = findBreakingPoint(
+        state.nodes,
+        state.edges,
+        seed,
+        state.challengeThresholds,
+        { faults: state.faults, ticks: 6, maxRps: 2_000 }
+      );
+      setBenchmark(result);
+      setBenchmarkSignature(signatureOf(state.nodes, state.edges));
+      setBenchmarkRunning(false);
+    }, 30);
+  };
+
+  const applyFix = (candidate: FixCandidate) => {
+    const state = useSimulationStore.getState();
+    const seed = ensureScenarioSeed();
+    replaceScenario(
+      candidate.nodes,
+      candidate.edges,
+      {
+        loadProfile: state.loadProfile,
+        seed,
+        thresholds: state.challengeThresholds,
+        faults: state.faults,
+      },
+      'template'
+    );
+    resetSimulation({ seed, faults: state.faults });
+    selectNode(candidate.projected.bottleneckId);
+    setDaily(null);
+    setActiveScenarioId(null);
+    clearChallengeUi();
+    setShareNotice(
+      `${candidate.label} applied. Run the challenge to verify the projection.`
+    );
+    window.requestAnimationFrame(() => {
+      void fitView({ padding: 0.2, duration: 450 });
+    });
+  };
+
+  const tidyLayout = () => {
+    const state = useSimulationStore.getState();
+    setNodePositions(tidyPositions(state.nodes, state.edges));
+    window.requestAnimationFrame(() => {
+      void fitView({ padding: 0.18, duration: 400 });
+    });
+  };
+
+  const resetRun = () => {
+    resetSimulation();
+    useSimulationStore.getState().resetMetrics();
+    setRunning(false);
+    clearChallengeUi();
+  };
+
   const downloadResultCard = () => {
     if (!challengeResult) return;
-    downloadChallengeCard(challengeResult, baselineResult, challengeAttempt);
+    downloadChallengeCard(challengeResult, baselineResult, challengeAttempt, {
+      nodes,
+      edges,
+      breakpointRps: activeBenchmark?.breakpointRps ?? null,
+      dailyLabel: daily?.label ?? null,
+      costPerHour: challengeResult.costPerHour,
+    });
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target !== null &&
+        (target.closest('input, textarea, select') !== null ||
+          target.isContentEditable);
+
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === 'k'
+      ) {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+      if (typing) return;
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === 'z'
+      ) {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+      } else if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === 'y'
+      ) {
+        event.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [redo, undo]);
+
+  const xShareHref =
+    challengeResult && resultShareUrl
+      ? createXIntentUrl(challengeResult, resultShareUrl, {
+          breakpointRps: activeBenchmark?.breakpointRps ?? null,
+          dailyLabel: daily?.label ?? null,
+        })
+      : null;
+
+  const commands: PaletteCommand[] = [
+    {
+      id: 'run',
+      label: running ? 'Pause simulation' : 'Run simulation',
+      group: 'Simulation',
+      keywords: 'play stop',
+      run: () => setRunning(!running),
+    },
+    {
+      id: 'reset',
+      label: 'Reset run',
+      group: 'Simulation',
+      keywords: 'clear restart',
+      run: resetRun,
+    },
+    {
+      id: 'challenge',
+      label: 'Start spike challenge',
+      group: 'Simulation',
+      hint: '9s',
+      run: startChallenge,
+    },
+    {
+      id: 'benchmark',
+      label: benchmarkRunning ? 'Benchmark running…' : 'Find breaking point',
+      group: 'Analysis',
+      keywords: 'limit capacity benchmark',
+      disabled: benchmarkRunning,
+      run: runBenchmark,
+    },
+    {
+      id: 'tidy',
+      label: 'Tidy layout',
+      group: 'Canvas',
+      keywords: 'arrange align',
+      run: tidyLayout,
+    },
+    {
+      id: 'fit',
+      label: 'Fit graph to view',
+      group: 'Canvas',
+      keywords: 'zoom',
+      run: () => void fitView({ padding: 0.22, duration: 400 }),
+    },
+    {
+      id: 'undo',
+      label: 'Undo',
+      group: 'Edit',
+      hint: 'Ctrl Z',
+      disabled: pastCount === 0,
+      run: undo,
+    },
+    {
+      id: 'redo',
+      label: 'Redo',
+      group: 'Edit',
+      hint: 'Ctrl Shift Z',
+      disabled: futureCount === 0,
+      run: redo,
+    },
+    {
+      id: 'copy-link',
+      label: 'Copy challenge link',
+      group: 'Share',
+      run: () => void copyChallengeLink(),
+    },
+    {
+      id: 'download-card',
+      label: 'Download result card',
+      group: 'Share',
+      disabled: challengeResult === null,
+      run: downloadResultCard,
+    },
+    ...(today
+      ? [
+          {
+            id: 'daily',
+            label: `Run ${today.label}`,
+            group: 'Scenario',
+            run: handleDaily,
+          },
+        ]
+      : []),
+    ...SCENARIOS.map((scenario) => ({
+      id: `scenario-${scenario.id}`,
+      label: scenario.name,
+      group: scenario.kind === 'chaos' ? 'Chaos recipe' : 'Template',
+      keywords: scenario.description,
+      run: () => handleSelectScenario(scenario),
+    })),
+  ];
 
   const challengePanel = {
     phase: challengePhase,
@@ -419,9 +945,18 @@ function Simulator() {
     result: challengeResult,
     thresholds: challengeThresholds,
     isSharedScenario,
+    dailyLabel: daily?.label ?? null,
     shareNotice,
+    benchmark: activeBenchmark,
+    benchmarkRunning,
+    fixCandidates: activeFixCandidates,
+    fixLabRunning,
     onStart: startChallenge,
     onScaleBottleneck: scaleBottleneck,
+    onBenchmark: runBenchmark,
+    onApplyFix: applyFix,
+    onChangeThresholds: (thresholds: ChallengeThresholds) =>
+      setChallengeThresholds(thresholds),
     onCopyLink: copyChallengeLink,
     onDownloadCard: downloadResultCard,
     xShareHref,
@@ -459,7 +994,20 @@ function Simulator() {
         tabIndex={-1}
         className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-live lg:col-start-2 lg:row-start-1"
       >
-        <Toolbar challengeRunning={challengePhase === 'running'} />
+        <Toolbar
+          challengeRunning={challengePhase === 'running'}
+          activeScenarioId={activeScenarioId}
+          daily={today}
+          canUndo={pastCount > 0}
+          canRedo={futureCount > 0}
+          onSelectScenario={handleSelectScenario}
+          onDaily={handleDaily}
+          onUndo={undo}
+          onRedo={redo}
+          onTidy={tidyLayout}
+          onReset={resetRun}
+          onOpenPalette={() => setPaletteOpen(true)}
+        />
         <div
           className="sim-canvas-surface relative min-h-0 min-w-0 flex-1"
           onDrop={onDrop}
@@ -472,6 +1020,8 @@ function Simulator() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onNodeClick={(_, node) => selectNode(node.id)}
+            onPaneClick={() => selectNode(null)}
             colorMode="light"
             fitView
             fitViewOptions={FIT_VIEW_OPTIONS}
@@ -480,7 +1030,7 @@ function Simulator() {
             defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
           >
             <Background gap={24} size={1} color="#cfdae2" />
-            <Controls position="top-right" />
+            <Controls position="bottom-left" />
             <MiniMap
               position="bottom-right"
               pannable
@@ -490,7 +1040,9 @@ function Simulator() {
               maskColor="rgba(232, 238, 242, 0.72)"
             />
           </ReactFlow>
-          <div className="pointer-events-none absolute bottom-3 left-3 z-10 hidden items-center gap-4 border border-rule bg-surface px-3 py-1.5 lg:flex">
+          <GraphHealth />
+          <InspectorPanel />
+          <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 hidden -translate-x-1/2 items-center gap-4 border border-rule bg-surface px-3 py-1.5 lg:flex">
             <span className="font-mono text-[10px] text-faint">
               SHEET <span className="text-ink">01</span>
             </span>
@@ -508,6 +1060,13 @@ function Simulator() {
         <MetricsPanel />
       </main>
       <ChallengePanel {...challengePanel} />
+      {paletteOpen ? (
+        <CommandPalette
+          open
+          commands={commands}
+          onClose={() => setPaletteOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

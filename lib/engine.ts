@@ -7,6 +7,7 @@ import type {
   RequestTraceHop,
   RequestTraceOutcome,
   RequestTraceReason,
+  ScheduledFault,
   SimulationEngineOptions,
   SimulationSummary,
   SimulationUpdate,
@@ -25,13 +26,14 @@ const MAX_EVENTS_PER_TICK = 200_000;
 /** Never generate more than one request per millisecond. */
 const MIN_INTERARRIVAL_MS = 1;
 
-type EventKind = 'generator' | 'arrival' | 'complete';
+type EventKind = 'generator' | 'arrival' | 'complete' | 'fault';
 
 interface Request {
   id: number;
   startedAt: number;
   overheadMs: number;
   hops: number;
+  retryCount: number;
   enqueuedAt: number;
   serviceStartedAt: number;
   trace?: RequestTraceDraft;
@@ -62,6 +64,8 @@ interface SimEvent {
   request?: Request;
   /** Generators use an epoch so rescheduled events can be invalidated. */
   epoch?: number;
+  /** Fault events carry the outage duration. */
+  durationMs?: number;
 }
 
 interface IntervalStats {
@@ -69,6 +73,8 @@ interface IntervalStats {
   out: number;
   errors: number;
   dropped: number;
+  cacheHits: number;
+  cacheMisses: number;
   busyMs: number;
   latencySamples: number[];
 }
@@ -79,11 +85,16 @@ interface NodeRuntime {
   busy: boolean;
   epoch: number;
   downUntil: number;
+  instances: number;
+  lastScaleAt: number;
+  rrIndex: number;
   interval: IntervalStats;
   totalIn: number;
   totalOut: number;
   totalErrors: number;
   totalDropped: number;
+  totalCacheHits: number;
+  totalCacheMisses: number;
 }
 
 function emptyInterval(): IntervalStats {
@@ -92,9 +103,24 @@ function emptyInterval(): IntervalStats {
     out: 0,
     errors: 0,
     dropped: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
     busyMs: 0,
     latencySamples: [],
   };
+}
+
+function initialInstances(config: ComponentConfig): number {
+  if (!config.autoscaling) return 1;
+  const min = Math.max(1, config.minInstances ?? 1);
+  const max = Math.max(min, config.maxInstances ?? min);
+  return Math.min(max, min);
+}
+
+function effectiveCapacity(config: ComponentConfig, instances: number): number {
+  const replicas = Math.max(1, config.replicas ?? 1);
+  const running = config.autoscaling ? Math.max(1, instances) : 1;
+  return Math.max(0, config.throughputLimit) * replicas * running;
 }
 
 function compareEvents(a: SimEvent, b: SimEvent): number {
@@ -194,13 +220,54 @@ function pushSample(samples: number[], value: number): void {
 }
 
 function normalizeConfig(config: ComponentConfig): ComponentConfig {
-  return {
+  const normalized: ComponentConfig = {
     ...config,
     throughputLimit: clamp(Number(config.throughputLimit) || 0, 0, 100_000),
     latency: clamp(Number(config.latency) || 0, 0, 60_000),
     failureRate: clamp(Number(config.failureRate) || 0, 0, 1),
     queueCapacity: clamp(Math.floor(Number(config.queueCapacity) || 0), 0, 1_000_000),
   };
+
+  if (config.type === 'cache') {
+    normalized.cacheHitRate = clamp(
+      Number(config.cacheHitRate ?? 0.82) || 0,
+      0,
+      1
+    );
+  }
+  if (config.type === 'load-balancer') {
+    normalized.healthChecks = config.healthChecks ?? true;
+    normalized.lbStrategy = config.lbStrategy ?? 'least-load';
+  }
+  if (config.replicas !== undefined) {
+    normalized.replicas = clamp(Math.round(Number(config.replicas) || 1), 1, 10);
+  }
+  if (config.minInstances !== undefined) {
+    normalized.minInstances = clamp(
+      Math.round(Number(config.minInstances) || 1),
+      1,
+      10
+    );
+  }
+  if (config.maxInstances !== undefined) {
+    normalized.maxInstances = clamp(
+      Math.round(Number(config.maxInstances) || 1),
+      1,
+      10
+    );
+  }
+  if (
+    normalized.minInstances !== undefined &&
+    normalized.maxInstances !== undefined &&
+    normalized.maxInstances < normalized.minInstances
+  ) {
+    normalized.maxInstances = normalized.minInstances;
+  }
+  if (config.retries !== undefined) {
+    normalized.retries = clamp(Math.round(Number(config.retries) || 0), 0, 3);
+  }
+
+  return normalized;
 }
 
 export class SimulationEngine {
@@ -211,6 +278,7 @@ export class SimulationEngine {
   private captureTraces = false;
   private trackedTraceCount = 0;
   private pendingTraces: RequestTrace[] = [];
+  private scheduledFaults: ScheduledFault[] = [];
   private seq = 0;
   private requestSeq = 0;
   private time = 0;
@@ -234,7 +302,22 @@ export class SimulationEngine {
     const seed = options.seed ?? fallbackSeed++;
     this.random = createRandom(seed);
     this.captureTraces = options.captureTraces ?? false;
+    this.scheduledFaults = options.faults ?? [];
     this.updateGraph(graph);
+    this.scheduleFaults();
+  }
+
+  private scheduleFaults(): void {
+    for (const fault of this.scheduledFaults) {
+      if (!this.components.has(fault.nodeId)) continue;
+      this.heap.push({
+        time: Math.max(0, fault.startMs),
+        seq: this.seq++,
+        kind: 'fault',
+        nodeId: fault.nodeId,
+        durationMs: Math.max(100, fault.durationMs),
+      });
+    }
   }
 
   /** Reconcile the runtime with a new graph while preserving existing metrics. */
@@ -255,8 +338,15 @@ export class SimulationEngine {
     for (const [id, config] of next) {
       const existing = this.components.get(id);
       if (existing && existing.config.type === config.type) {
-        const rateChanged = existing.config.throughputLimit !== config.throughputLimit;
+        const rateChanged =
+          existing.config.throughputLimit !== config.throughputLimit ||
+          existing.config.replicas !== config.replicas;
         existing.config = config;
+        const min = Math.max(1, config.minInstances ?? 1);
+        const max = Math.max(min, config.maxInstances ?? min);
+        existing.instances = config.autoscaling
+          ? Math.min(max, Math.max(min, existing.instances))
+          : 1;
         if (config.type === 'traffic-generator' && rateChanged) {
           existing.epoch += 1;
           this.scheduleNextGeneration(existing);
@@ -271,11 +361,16 @@ export class SimulationEngine {
         busy: false,
         epoch: 0,
         downUntil: 0,
+        instances: initialInstances(config),
+        lastScaleAt: this.time,
+        rrIndex: 0,
         interval: emptyInterval(),
         totalIn: 0,
         totalOut: 0,
         totalErrors: 0,
         totalDropped: 0,
+        totalCacheHits: 0,
+        totalCacheMisses: 0,
       };
       this.components.set(id, runtime);
       if (config.type === 'traffic-generator') this.scheduleNextGeneration(runtime);
@@ -362,6 +457,9 @@ export class SimulationEngine {
       case 'complete':
         this.handleComplete(runtime, event);
         break;
+      case 'fault':
+        this.injectOutage(event.nodeId, event.durationMs ?? 1_000);
+        break;
     }
   }
 
@@ -385,6 +483,7 @@ export class SimulationEngine {
       startedAt: event.time,
       overheadMs: 0,
       hops: 0,
+      retryCount: 0,
       enqueuedAt: event.time,
       serviceStartedAt: event.time,
     };
@@ -401,7 +500,7 @@ export class SimulationEngine {
       time: event.time,
       seq: this.seq++,
       kind: 'arrival',
-      nodeId: this.pickTarget(targets),
+      nodeId: this.pickTarget(runtime, targets),
       request,
     });
   }
@@ -473,11 +572,32 @@ export class SimulationEngine {
 
     if (failed) {
       this.finishTraceHop(request, 'failed', failureReason, event.time, runtime.config.latency);
-      this.finalizeTrace(request, 'failed', failureReason, event.time);
       runtime.interval.errors += 1;
       runtime.totalErrors += 1;
       this.summaryInterval.errors += 1;
       this.totals.errors += 1;
+
+      const retryLimit =
+        runtime.config.type === 'service'
+          ? Math.max(0, runtime.config.retries ?? 0)
+          : 0;
+      const canRetry =
+        failureReason === 'component-failure' &&
+        request.retryCount < retryLimit;
+
+      if (canRetry) {
+        request.retryCount += 1;
+        this.heap.push({
+          time: event.time + 100,
+          seq: this.seq++,
+          kind: 'arrival',
+          nodeId: runtime.config.id,
+          request,
+        });
+      } else {
+        this.finalizeTrace(request, 'failed', failureReason, event.time);
+      }
+
       this.pump(runtime, event.time);
       return;
     }
@@ -487,13 +607,36 @@ export class SimulationEngine {
 
     const targets = this.edges.get(runtime.config.id);
 
+    if (
+      runtime.config.type === 'cache' &&
+      targets &&
+      targets.length > 0 &&
+      this.random() < clamp(runtime.config.cacheHitRate ?? 0, 0, 1)
+    ) {
+      runtime.interval.cacheHits += 1;
+      runtime.totalCacheHits += 1;
+      const endToEnd = event.time - request.startedAt + request.overheadMs;
+      pushSample(this.summaryInterval.e2eSamples, endToEnd);
+      this.summaryInterval.completed += 1;
+      this.totals.completed += 1;
+      this.finishTraceHop(request, 'completed', null, event.time, runtime.config.latency);
+      this.finalizeTrace(request, 'completed', null, event.time);
+      this.pump(runtime, event.time);
+      return;
+    }
+
+    if (runtime.config.type === 'cache') {
+      runtime.interval.cacheMisses += 1;
+      runtime.totalCacheMisses += 1;
+    }
+
     if (targets && targets.length > 0) {
       this.finishTraceHop(request, 'completed', null, event.time, runtime.config.latency);
       this.heap.push({
         time: event.time,
         seq: this.seq++,
         kind: 'arrival',
-        nodeId: this.pickTarget(targets),
+        nodeId: this.pickTarget(runtime, targets),
         request,
       });
     } else {
@@ -523,7 +666,11 @@ export class SimulationEngine {
     }
 
     this.heap.push({
-      time: now + this.sampleServiceMs(runtime.config.throughputLimit),
+      time:
+        now +
+        this.sampleServiceMs(
+          effectiveCapacity(runtime.config, runtime.instances)
+        ),
       seq: this.seq++,
       kind: 'complete',
       nodeId: runtime.config.id,
@@ -687,25 +834,45 @@ export class SimulationEngine {
     return clamp(sample, 0.1, 60_000);
   }
 
-  private pickTarget(targets: string[]): string {
-    if (targets.length === 1) return targets[0];
+  private pickTarget(source: NodeRuntime, targets: string[]): string {
+    let candidates = targets;
+
+    if (source.config.type === 'load-balancer' && source.config.healthChecks) {
+      const healthy = targets.filter((id) => {
+        const runtime = this.components.get(id);
+        return runtime ? !this.isDown(runtime) : true;
+      });
+      if (healthy.length > 0) candidates = healthy;
+    }
+
+    if (candidates.length === 1) return candidates[0];
+
+    const strategy = source.config.lbStrategy ?? 'least-load';
+    if (source.config.type === 'load-balancer' && strategy === 'round-robin') {
+      const target = candidates[source.rrIndex % candidates.length];
+      source.rrIndex += 1;
+      return target;
+    }
+    if (source.config.type === 'load-balancer' && strategy === 'random') {
+      return candidates[Math.floor(this.random() * candidates.length)];
+    }
 
     let bestLoad = Number.POSITIVE_INFINITY;
-    let candidates: string[] = [];
+    let leastLoaded: string[] = [];
 
-    for (const id of targets) {
+    for (const id of candidates) {
       const runtime = this.components.get(id);
       const load = runtime ? runtime.queue.length + (runtime.busy ? 1 : 0) : 0;
       if (load < bestLoad) {
         bestLoad = load;
-        candidates = [id];
+        leastLoaded = [id];
       } else if (load === bestLoad) {
-        candidates.push(id);
+        leastLoaded.push(id);
       }
     }
 
     // Break ties randomly so equal-capacity targets share traffic evenly.
-    return candidates[Math.floor(this.random() * candidates.length)];
+    return leastLoaded[Math.floor(this.random() * leastLoaded.length)];
   }
 
   private snapshot(durationMs: number): SimulationUpdate {
@@ -714,14 +881,47 @@ export class SimulationEngine {
 
     for (const [id, runtime] of this.components) {
       const samples = runtime.interval.latencySamples;
+      const utilization = clamp(runtime.interval.busyMs / duration, 0, 1);
+      const down = this.isDown(runtime);
+
+      if (
+        runtime.config.type === 'service' &&
+        runtime.config.autoscaling &&
+        !down
+      ) {
+        const min = Math.max(1, runtime.config.minInstances ?? 1);
+        const max = Math.max(min, runtime.config.maxInstances ?? min);
+        const cooldownMs = 2_500;
+        const cooledDown = this.time - runtime.lastScaleAt >= cooldownMs;
+        if (utilization > 0.82 && runtime.instances < max && cooledDown) {
+          runtime.instances += 1;
+          runtime.lastScaleAt = this.time;
+        } else if (
+          utilization < 0.55 &&
+          runtime.instances > min &&
+          cooledDown
+        ) {
+          runtime.instances -= 1;
+          runtime.lastScaleAt = this.time;
+        }
+      }
+
+      const cacheHits = runtime.interval.cacheHits;
+      const cacheMisses = runtime.interval.cacheMisses;
+      const cacheAttempts = cacheHits + cacheMisses;
+
       nodes[id] = {
         requestsIn: runtime.interval.in,
         requestsOut: runtime.interval.out,
         errors: runtime.interval.errors,
         dropped: runtime.interval.dropped,
         queueDepth: runtime.queue.length,
-        down: this.isDown(runtime),
-        utilization: clamp(runtime.interval.busyMs / duration, 0, 1),
+        down,
+        utilization,
+        instances: runtime.instances,
+        cacheHits,
+        cacheMisses,
+        cacheHitRate: cacheAttempts > 0 ? cacheHits / cacheAttempts : 0,
         p50Latency: percentile(samples, 0.5),
         p95Latency: percentile(samples, 0.95),
         p99Latency: percentile(samples, 0.99),

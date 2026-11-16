@@ -45,6 +45,7 @@ function createEngine(
   const next = new SimulationEngine(graph, {
     ...options,
     seed: options.seed ?? state.scenarioSeed ?? undefined,
+    faults: options.faults ?? state.faults,
   });
   next.setLoadProfile(state.loadProfile);
   return next;

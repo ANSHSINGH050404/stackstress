@@ -7,15 +7,27 @@ export type ComponentType =
 
 export type LoadProfile = 'steady' | 'spike' | 'ramp';
 
+export type LoadBalancerStrategy = 'least-load' | 'round-robin' | 'random';
+
 export interface ChallengeThresholds {
   maxP95LatencyMs: number;
   maxErrorRate: number;
+  /** Optional provisioned-cost ceiling in USD/hour. */
+  maxCostPerHour?: number;
+}
+
+export interface ScheduledFault {
+  id: string;
+  nodeId: string;
+  startMs: number;
+  durationMs: number;
 }
 
 export interface SimulationScenarioSettings {
   loadProfile: LoadProfile;
   seed: number;
   thresholds: ChallengeThresholds;
+  faults?: ScheduledFault[];
 }
 
 export type RequestTraceOutcome = 'completed' | 'failed' | 'dropped';
@@ -52,6 +64,7 @@ export interface RequestTrace {
 export interface SimulationEngineOptions {
   seed?: number;
   captureTraces?: boolean;
+  faults?: ScheduledFault[];
 }
 
 export interface ComponentConfig {
@@ -69,6 +82,22 @@ export interface ComponentConfig {
   failureRate: number;
   /** How many requests may wait in the queue before arrivals are dropped. */
   queueCapacity: number;
+  /** Cache-only: fraction of requests served without forwarding downstream. */
+  cacheHitRate?: number;
+  /** Load-balancer-only: how the next target is selected. */
+  lbStrategy?: LoadBalancerStrategy;
+  /** Load-balancer-only: skip targets that are currently down. */
+  healthChecks?: boolean;
+  /** Database-only: number of identical replicas behind the node. */
+  replicas?: number;
+  /** Service-only: add instances when utilization is sustained above 82%. */
+  autoscaling?: boolean;
+  /** Service-only: minimum instance count while autoscaling. */
+  minInstances?: number;
+  /** Service-only: maximum instance count while autoscaling. */
+  maxInstances?: number;
+  /** Service-only: retry attempts after a component failure. */
+  retries?: number;
 }
 
 export interface NodeMetrics {
@@ -86,6 +115,14 @@ export interface NodeMetrics {
   down: boolean;
   /** Fraction of the last interval the server was busy, 0 to 1. */
   utilization: number;
+  /** Current service instances (autoscaling services, otherwise 1). */
+  instances: number;
+  /** Cache hits during the last interval. */
+  cacheHits: number;
+  /** Cache misses during the last interval. */
+  cacheMisses: number;
+  /** Cache hit ratio during the last interval, 0 to 1. */
+  cacheHitRate: number;
   p50Latency: number;
   p95Latency: number;
   p99Latency: number;

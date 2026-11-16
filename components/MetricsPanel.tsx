@@ -1,77 +1,32 @@
 'use client';
 
 import { useSimulationStore } from '@/lib/store';
-import { formatDuration, formatLatency, formatPercent, formatRate } from '@/lib/format';
-
-const CHART_WIDTH = 180;
-const CHART_HEIGHT = 38;
-
-function Sparkline({ values, color }: { values: number[]; color: string }) {
-  const data = values.length > 1 ? values : [0, 0];
-  const max = Math.max(...data, 0.0001);
-  const step = CHART_WIDTH / (data.length - 1);
-  const points = data
-    .map((value, index) => {
-      const x = index * step;
-      const y = CHART_HEIGHT - (value / max) * (CHART_HEIGHT - 6) - 3;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
-
-  return (
-    <svg
-      viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-      preserveAspectRatio="none"
-      className="mt-1.5 h-9 w-full"
-      aria-hidden
-    >
-      <line
-        x1="0"
-        y1={CHART_HEIGHT - 2}
-        x2={CHART_WIDTH}
-        y2={CHART_HEIGHT - 2}
-        stroke="var(--rule)"
-        strokeWidth="1"
-        vectorEffect="non-scaling-stroke"
-      />
-      <line
-        x1="0"
-        y1={CHART_HEIGHT / 2}
-        x2={CHART_WIDTH}
-        y2={CHART_HEIGHT / 2}
-        stroke="var(--rule)"
-        strokeWidth="1"
-        strokeDasharray="2 4"
-        opacity="0.7"
-        vectorEffect="non-scaling-stroke"
-      />
-      <polygon
-        points={`0,${CHART_HEIGHT} ${points} ${CHART_WIDTH},${CHART_HEIGHT}`}
-        fill={color}
-        opacity={0.08}
-      />
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
+import { componentCostPerHour, formatCost } from '@/lib/components';
+import {
+  formatDuration,
+  formatLatency,
+  formatPercent,
+  formatRate,
+} from '@/lib/format';
+import { SPIKE_WINDOW_END_MS, SPIKE_WINDOW_START_MS } from '@/lib/challenges';
+import Sparkline from './Sparkline';
 
 function MetricChart({
   label,
   value,
   color,
   values,
+  threshold,
+  shade,
+  note,
 }: {
   label: string;
   value: string;
   color: string;
   values: number[];
+  threshold?: number;
+  shade?: { from: number; to: number } | null;
+  note?: string;
 }) {
   return (
     <div className="min-w-0 border-r border-rule px-1.5 py-1 last:border-r-0 lg:min-w-[160px] lg:flex-1 lg:px-4 lg:py-3">
@@ -87,7 +42,41 @@ function MetricChart({
         </span>
       </div>
       <div className="hidden lg:block">
-        <Sparkline values={values} color={color} />
+        <Sparkline
+          values={values}
+          color={color}
+          threshold={threshold}
+          shade={shade}
+          label={`${label} history`}
+        />
+        {note ? (
+          <p className="mt-0.5 font-mono text-[9px] text-faint">{note}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tone = 'text-ink',
+  className = '',
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <div className="truncate text-[10px] leading-3 text-muted lg:text-[11px] lg:leading-normal">
+        {label}
+      </div>
+      <div
+        className={`whitespace-nowrap font-mono text-[12px] font-semibold leading-4 tabular-nums lg:text-[17px] lg:leading-6 ${tone}`}
+      >
+        {value}
       </div>
     </div>
   );
@@ -97,6 +86,9 @@ export default function MetricsPanel() {
   const history = useSimulationStore((state) => state.history);
   const summary = useSimulationStore((state) => state.summary);
   const running = useSimulationStore((state) => state.running);
+  const nodes = useSimulationStore((state) => state.nodes);
+  const metricsById = useSimulationStore((state) => state.metricsById);
+  const thresholds = useSimulationStore((state) => state.challengeThresholds);
 
   const latest = history[history.length - 1];
   const elapsed = latest?.t ?? 0;
@@ -111,13 +103,39 @@ export default function MetricsPanel() {
     errorRate.push(point.errorRate);
   }
 
+  const firstT = history[0]?.t ?? 0;
+  const lastT = latest?.t ?? 0;
+  const span = Math.max(1, lastT - firstT);
+  const shade =
+    lastT > SPIKE_WINDOW_START_MS
+      ? {
+          from: Math.max(0, (SPIKE_WINDOW_START_MS - firstT) / span),
+          to: Math.min(1, (SPIKE_WINDOW_END_MS - firstT) / span),
+        }
+      : null;
+
+  const costPerHour = nodes.reduce(
+    (sum, node) =>
+      sum +
+      componentCostPerHour(
+        node.data.component,
+        metricsById[node.id]?.instances ??
+          node.data.component.minInstances ??
+          1
+      ),
+    0
+  );
+  const overBudget =
+    thresholds.maxCostPerHour !== undefined &&
+    costPerHour > thresholds.maxCostPerHour;
+
   return (
     <section
       aria-label="Live simulation metrics"
       tabIndex={0}
       className="z-10 grid h-[124px] shrink-0 grid-rows-[20px_44px_auto] gap-1 overflow-hidden border-t border-rule bg-surface px-3 py-1 text-ink focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-live lg:flex lg:h-[150px] lg:gap-0 lg:overflow-x-auto lg:py-3"
     >
-      <div className="contents lg:flex lg:w-[220px] lg:shrink-0 lg:flex-col lg:justify-between lg:border-r lg:border-rule lg:px-4 lg:py-2">
+      <div className="contents lg:flex lg:w-[246px] lg:shrink-0 lg:flex-col lg:justify-between lg:border-r lg:border-rule lg:px-4 lg:py-2">
         <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted">
           <span
             className={`h-1.5 w-1.5 rounded-[1px] ${
@@ -131,39 +149,34 @@ export default function MetricsPanel() {
             {formatDuration(elapsed)}
           </span>
         </div>
-        <div className="grid min-w-0 grid-cols-4 gap-1 lg:grid-cols-2 lg:gap-x-3 lg:gap-y-1.5 lg:pt-2">
-          <div className="min-w-0">
-            <div className="truncate text-[10px] leading-3 text-muted lg:text-[11px] lg:leading-normal">
-              Completed
-            </div>
-            <div className="whitespace-nowrap font-mono text-[12px] font-semibold leading-4 tabular-nums text-ink lg:text-[17px] lg:leading-6">
-              {Math.round(summary?.totalCompleted ?? 0).toLocaleString()}
-            </div>
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-[10px] leading-3 text-muted lg:text-[11px] lg:leading-normal">
-              Dropped
-            </div>
-            <div className="whitespace-nowrap font-mono text-[12px] font-semibold leading-4 tabular-nums text-alarm lg:text-[17px] lg:leading-6">
-              {Math.round(summary?.totalDropped ?? 0).toLocaleString()}
-            </div>
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-[10px] leading-3 text-muted lg:text-[11px] lg:leading-normal">
-              p50
-            </div>
-            <div className="whitespace-nowrap font-mono text-[12px] font-semibold leading-4 tabular-nums text-ink lg:text-[17px] lg:leading-6">
-              {formatLatency(summary?.p50Latency ?? 0)}
-            </div>
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-[10px] leading-3 text-muted lg:text-[11px] lg:leading-normal">
-              p99
-            </div>
-            <div className="whitespace-nowrap font-mono text-[12px] font-semibold leading-4 tabular-nums text-ink lg:text-[17px] lg:leading-6">
-              {formatLatency(summary?.p99Latency ?? 0)}
-            </div>
-          </div>
+        <div className="grid min-w-0 grid-cols-4 gap-1 lg:grid-cols-2 lg:gap-x-3 lg:gap-y-1 lg:pt-1.5">
+          <Stat
+            label="Completed"
+            value={Math.round(summary?.totalCompleted ?? 0).toLocaleString()}
+          />
+          <Stat
+            label="Dropped"
+            value={Math.round(summary?.totalDropped ?? 0).toLocaleString()}
+            tone="text-alarm"
+          />
+          <Stat label="p50" value={formatLatency(summary?.p50Latency ?? 0)} />
+          <Stat label="p99" value={formatLatency(summary?.p99Latency ?? 0)} />
+          <Stat
+            label="Run cost"
+            value={formatCost(costPerHour)}
+            tone={overBudget ? 'text-alarm' : 'text-ink'}
+            className="hidden lg:block"
+          />
+          <Stat
+            label="Cost cap"
+            value={
+              thresholds.maxCostPerHour !== undefined
+                ? formatCost(thresholds.maxCostPerHour)
+                : 'none'
+            }
+            tone={overBudget ? 'text-alarm' : 'text-muted'}
+            className="hidden lg:block"
+          />
         </div>
       </div>
 
@@ -173,18 +186,25 @@ export default function MetricsPanel() {
           value={`${formatRate(latest?.rps ?? 0)}/s`}
           color="var(--live-ink)"
           values={throughput}
+          shade={shade}
         />
         <MetricChart
           label="p95 latency"
           value={formatLatency(latest?.p95 ?? 0)}
           color="var(--warning-ink)"
           values={p95}
+          threshold={thresholds.maxP95LatencyMs}
+          shade={shade}
+          note={`limit ${formatLatency(thresholds.maxP95LatencyMs)} · spike window shaded`}
         />
         <MetricChart
           label="Error rate"
           value={formatPercent(latest?.errorRate ?? 0)}
           color="var(--alarm-ink)"
           values={errorRate}
+          threshold={thresholds.maxErrorRate}
+          shade={shade}
+          note={`budget ${formatPercent(thresholds.maxErrorRate)}`}
         />
       </div>
     </section>

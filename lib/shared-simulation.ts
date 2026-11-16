@@ -4,7 +4,9 @@ import type {
   ChallengeThresholds,
   ComponentConfig,
   ComponentType,
+  LoadBalancerStrategy,
   LoadProfile,
+  ScheduledFault,
 } from '@/types';
 import type { SimNode } from './store';
 
@@ -27,6 +29,7 @@ export interface SharedSimulation {
   loadProfile: LoadProfile;
   seed: number;
   thresholds: ChallengeThresholds;
+  faults?: ScheduledFault[];
 }
 
 interface SerializedSimulation {
@@ -41,7 +44,14 @@ interface SerializedSimulation {
     component: ComponentConfig;
   }>;
   edges: Array<{ id: string; source: string; target: string }>;
+  faults?: ScheduledFault[];
 }
+
+const LB_STRATEGIES = new Set<LoadBalancerStrategy>([
+  'least-load',
+  'round-robin',
+  'random',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -78,10 +88,46 @@ function parseThresholds(value: unknown): ChallengeThresholds | null {
     return null;
   }
 
-  return {
+  const thresholds: ChallengeThresholds = {
     maxP95LatencyMs: value.maxP95LatencyMs,
     maxErrorRate: value.maxErrorRate,
   };
+  if (value.maxCostPerHour !== undefined) {
+    if (!isFiniteInRange(value.maxCostPerHour, 0, 100_000)) return null;
+    thresholds.maxCostPerHour = value.maxCostPerHour;
+  }
+  return thresholds;
+}
+
+function parseFaults(value: unknown, nodeIds: Set<string>): ScheduledFault[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 30) return null;
+
+  const faults: ScheduledFault[] = [];
+  const ids = new Set<string>();
+  for (const raw of value) {
+    if (
+      !isRecord(raw) ||
+      typeof raw.id !== 'string' ||
+      raw.id.length === 0 ||
+      raw.id.length > 100 ||
+      ids.has(raw.id) ||
+      typeof raw.nodeId !== 'string' ||
+      !nodeIds.has(raw.nodeId) ||
+      !isFiniteInRange(raw.startMs, 0, 600_000) ||
+      !isFiniteInRange(raw.durationMs, 100, 60_000)
+    ) {
+      return null;
+    }
+    ids.add(raw.id);
+    faults.push({
+      id: raw.id,
+      nodeId: raw.nodeId,
+      startMs: raw.startMs,
+      durationMs: raw.durationMs,
+    });
+  }
+  return faults;
 }
 
 function seedFromLegacyPayload(value: string): number {
@@ -110,7 +156,7 @@ function parseComponent(value: unknown, nodeId: string): ComponentConfig | null 
     return null;
   }
 
-  return {
+  const component: ComponentConfig = {
     id,
     type: type as ComponentType,
     name,
@@ -119,10 +165,70 @@ function parseComponent(value: unknown, nodeId: string): ComponentConfig | null 
     failureRate,
     queueCapacity: Math.floor(queueCapacity),
   };
+
+  if (value.cacheHitRate !== undefined) {
+    if (!isFiniteInRange(value.cacheHitRate, 0, 1)) return null;
+    component.cacheHitRate = value.cacheHitRate;
+  }
+  if (value.lbStrategy !== undefined) {
+    if (
+      typeof value.lbStrategy !== 'string' ||
+      !LB_STRATEGIES.has(value.lbStrategy as LoadBalancerStrategy)
+    ) {
+      return null;
+    }
+    component.lbStrategy = value.lbStrategy as LoadBalancerStrategy;
+  }
+  if (value.healthChecks !== undefined) {
+    if (typeof value.healthChecks !== 'boolean') return null;
+    component.healthChecks = value.healthChecks;
+  }
+  if (value.replicas !== undefined) {
+    if (
+      !Number.isInteger(value.replicas) ||
+      !isFiniteInRange(value.replicas, 1, 10)
+    ) {
+      return null;
+    }
+    component.replicas = value.replicas;
+  }
+  if (value.autoscaling !== undefined) {
+    if (typeof value.autoscaling !== 'boolean') return null;
+    component.autoscaling = value.autoscaling;
+  }
+  if (value.minInstances !== undefined) {
+    if (
+      !Number.isInteger(value.minInstances) ||
+      !isFiniteInRange(value.minInstances, 1, 10)
+    ) {
+      return null;
+    }
+    component.minInstances = value.minInstances;
+  }
+  if (value.maxInstances !== undefined) {
+    if (
+      !Number.isInteger(value.maxInstances) ||
+      !isFiniteInRange(value.maxInstances, 1, 10)
+    ) {
+      return null;
+    }
+    component.maxInstances = value.maxInstances;
+  }
+  if (value.retries !== undefined) {
+    if (
+      !Number.isInteger(value.retries) ||
+      !isFiniteInRange(value.retries, 0, 3)
+    ) {
+      return null;
+    }
+    component.retries = value.retries;
+  }
+
+  return component;
 }
 
 export function encodeSharedSimulation(scenario: SharedSimulation): string | null {
-  const { nodes, edges, loadProfile, seed, thresholds } = scenario;
+  const { nodes, edges, loadProfile, seed, thresholds, faults } = scenario;
   const validThresholds = parseThresholds(thresholds);
   if (nodes.length > MAX_NODES || edges.length > MAX_EDGES) return null;
   if (
@@ -134,6 +240,11 @@ export function encodeSharedSimulation(scenario: SharedSimulation): string | nul
   ) {
     return null;
   }
+  const validFaults = parseFaults(
+    faults,
+    new Set(nodes.map((node) => node.id))
+  );
+  if (!validFaults) return null;
 
   const payload: SerializedSimulation = {
     version: 2,
@@ -152,6 +263,7 @@ export function encodeSharedSimulation(scenario: SharedSimulation): string | nul
       target: edge.target,
     })),
   };
+  if (validFaults.length > 0) payload.faults = validFaults;
   const serialized = JSON.stringify(payload);
   if (serialized.length > MAX_PAYLOAD_LENGTH) return null;
 
@@ -244,13 +356,18 @@ export function decodeSharedSimulation(value: string): SharedSimulation | null {
       edges.push({ id: value.id, source: value.source, target: value.target });
     }
 
-    return {
+    const faults = parseFaults(payload.faults, ids);
+    if (!faults) return null;
+
+    const shared: SharedSimulation = {
       nodes,
       edges,
       loadProfile: payload.loadProfile as LoadProfile,
       seed,
       thresholds,
     };
+    if (faults.length > 0) shared.faults = faults;
+    return shared;
   } catch {
     return null;
   }
